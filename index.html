@@ -194,6 +194,9 @@ table.rev small{color:var(--muted);font-size:11px}
       <label>Apto
         <input id="fApto" required style="width:90px">
       </label>
+      <label>Nº reserva
+        <input id="fReserva" style="width:100px">
+      </label>
       <label style="flex:1;min-width:180px">Hóspede
         <input id="fHosp">
       </label>
@@ -220,7 +223,7 @@ table.rev small{color:var(--muted);font-size:11px}
     </div>
     <div style="overflow-x:auto">
     <table>
-      <thead><tr><th>Emp.</th><th>Apto</th><th>Hóspede</th><th>Acompanhante(s)</th><th class="num">Ad.</th><th class="num">Cr.</th><th>Check-in</th><th>Check-out</th><th>Café</th><th>Obs.</th><th></th></tr></thead>
+      <thead><tr><th>Emp.</th><th>Apto</th><th>Reserva</th><th>Hóspede</th><th>Acompanhante(s)</th><th class="num">Ad.</th><th class="num">Cr.</th><th>Check-in</th><th>Check-out</th><th>Café</th><th>Obs.</th><th></th></tr></thead>
       <tbody id="listaRes"></tbody>
     </table>
     </div>
@@ -348,7 +351,7 @@ function setStatus(tipo, txt) { const s = $("status"); s.className = "status " +
 
 // ---------- camada de gravação (local ou Supabase) ----------
 const okOuErro = r => { if (r && r.error) throw r.error; return r && r.data; };
-const linhaReserva = r => ({ id: r.id, emp: r.emp, apto: String(r.apto), hospede: r.hospede || "", acompanhante: r.acompanhante || "", adultos: +r.adultos || 0, criancas: +r.criancas || 0, checkin: r.checkin, checkout: r.checkout, cafe: !!r.cafe, obs: r.obs || "" });
+const linhaReserva = r => ({ id: r.id, emp: r.emp, apto: String(r.apto), hospede: r.hospede || "", acompanhante: r.acompanhante || "", reserva: String(r.reserva || ""), adultos: +r.adultos || 0, criancas: +r.criancas || 0, checkin: r.checkin, checkout: r.checkout, cafe: !!r.cafe, obs: r.obs || "" });
 const linhasExtras = avulsos => Object.entries(avulsos || {}).flatMap(([dia, emps]) => Object.entries(emps || {}).filter(([emp]) => EMP[emp]).map(([emp, v]) => ({ dia, emp, adultos: +v.a || 0, criancas: +v.c || 0 })));
 
 // Grava: no modo local salva no navegador; no online executa fn (chamadas ao Supabase).
@@ -395,7 +398,7 @@ const Store = {
 async function carregar() {
   const lim = addDays(hoje(), -DIAS_HISTORICO);
   const [r, e, c] = await Promise.all([
-    sb.from("reservas").select("id,emp,apto,hospede,acompanhante,adultos,criancas,checkin,checkout,cafe,obs").gte("checkout", lim).order("checkin").limit(5000),
+    sb.from("reservas").select("id,emp,apto,reserva,hospede,acompanhante,adultos,criancas,checkin,checkout,cafe,obs").gte("checkout", lim).order("checkin").limit(5000),
     sb.from("extras").select("dia,emp,adultos,criancas").gte("dia", lim),
     sb.from("config").select("itens,margem").eq("id", 1).maybeSingle()
   ]);
@@ -489,7 +492,7 @@ function renderRelacao() {
     for (const k in EMP) {
       const o = res.emp[k];
       let rows = o.aptos.map(r => `<tr${r.cafe ? "" : ' style="opacity:.75"'}><td><b>${esc(r.apto)}</b></td>
-        <td>${esc(r.hospede)}${r.acompanhante ? `<br><small>+ ${esc(r.acompanhante)}</small>` : ""}${r.obs ? `<br><small style="color:var(--muted)">${esc(r.obs)}</small>` : ""}</td>
+        <td>${esc(r.hospede)}${r.reserva ? ` <small style="color:var(--muted)">· Res. ${esc(r.reserva)}</small>` : ""}${r.acompanhante ? `<br><small>+ ${esc(r.acompanhante)}</small>` : ""}${r.obs ? `<br><small style="color:var(--muted)">${esc(r.obs)}</small>` : ""}</td>
         <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
         <td>${r.cafe ? "" : '<span class="tag no">sem café</span> '}${doPdf(r) ? "" : r.checkout === diaSel ? '<span class="tag out">sai hoje</span>' : "até " + brCurto(r.checkout)}</td></tr>`).join("");
       if (!rows) rows = `<tr><td colspan="5" class="empty">Nenhum apartamento hospedado neste dia.</td></tr>`;
@@ -556,14 +559,14 @@ function renderRelatorio() {
     h += `<h3>${EMP[k]} — ${pl(o.tot, "pessoa")} no café</h3>`;
     if (!o.aptos.length) { h += `<p class="r-obs">Nenhum apartamento hospedado.</p>`; }
     else {
-      h += `<table><thead><tr><th style="width:8%">Apto</th><th style="width:21%">Hóspede</th><th style="width:24%">Acompanhante(s)</th>
+      h += `<table><thead><tr><th style="width:7%">Apto</th><th style="width:8%">Reserva</th><th style="width:20%">Hóspede</th><th style="width:22%">Acompanhante(s)</th>
         <th class="num" style="width:5%">Ad.</th><th class="num" style="width:5%">Cr.</th><th class="num" style="width:11%">Café</th>
         <th>Observação</th><th class="num chk">✓</th></tr></thead><tbody>`;
       for (const r of o.aptos) {
         const pessoasApto = (+r.adultos || 0) + (+r.criancas || 0);
         const acomp = r.acompanhante ? esc(r.acompanhante) : (pessoasApto >= 2 ? '<span class="falta">não informado</span>' : "—");
         const obs = [r.checkout === dia && !doPdf(r) ? "Check-out hoje" : "", esc(r.obs)].filter(Boolean).join(" · ");
-        h += `<tr class="${r.cafe ? "" : "sem"}"><td><b>${esc(r.apto)}</b></td><td>${esc(r.hospede) || "—"}</td><td>${acomp}</td>
+        h += `<tr class="${r.cafe ? "" : "sem"}"><td><b>${esc(r.apto)}</b></td><td>${esc(r.reserva) || "—"}</td><td>${esc(r.hospede) || "—"}</td><td>${acomp}</td>
           <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
           <td class="num ${r.cafe ? "cafe-sim" : "cafe-nao"}">${r.cafe ? "COM CAFÉ" : "SEM CAFÉ"}</td>
           <td>${obs}</td><td></td></tr>`;
@@ -687,8 +690,7 @@ function agruparPorApto(pessoas) {
     const conta = cafe ? comCafe : g.pessoas;            // apto misto: só conta quem tem café
     const titular = g.pessoas.find(p => !ehGenerico(p.nome)) || g.pessoas[0];
     const outros = g.pessoas.filter(p => p !== titular);
-    const obs = [`Res. ${g.reserva}`,
-      cafe && semCafe.length ? `Sem café: ${semCafe.map(p => ehGenerico(p.nome) ? "acompanhante" : p.nome).join(", ")}` : ""].filter(Boolean).join(" · ");
+    const obs = cafe && semCafe.length ? `Sem café: ${semCafe.map(p => ehGenerico(p.nome) ? "acompanhante" : p.nome).join(", ")}` : "";
     return {
       apto: g.apto, tipo: g.tipo, reserva: g.reserva,
       hospede: ehGenerico(titular.nome) ? "" : titular.nome,
@@ -738,9 +740,10 @@ function renderRevisao() {
       ${aviso}
     </div>
     <div style="overflow-x:auto"><table class="rev">
-      <thead><tr><th style="width:80px">Apto</th><th>Titular</th><th>Acompanhante(s)</th><th style="width:60px">Ad.</th><th style="width:60px">Cr.</th><th style="width:110px">Café</th><th>Obs.</th><th></th></tr></thead>
+      <thead><tr><th style="width:80px">Apto</th><th style="width:80px">Reserva</th><th>Titular</th><th>Acompanhante(s)</th><th style="width:60px">Ad.</th><th style="width:60px">Cr.</th><th style="width:110px">Café</th><th>Obs.</th><th></th></tr></thead>
       <tbody>${imp.itens.map((i, n) => `<tr class="${i.cafe ? "" : "sem"}">
         <td><input data-i="${n}" data-f="apto" value="${esc(i.apto)}"><small>${esc(i.tipo)}</small></td>
+        <td><input data-i="${n}" data-f="reserva" value="${esc(i.reserva)}"></td>
         <td><input data-i="${n}" data-f="hospede" value="${esc(i.hospede)}"></td>
         <td><input data-i="${n}" data-f="acompanhante" value="${esc(i.acompanhante)}" class="${i.semNome && !i.acompanhante ? "falta" : ""}"
              placeholder="${i.semNome ? `${i.semNome} acompanhante(s) sem nome no PDF` : ""}"></td>
@@ -763,7 +766,7 @@ async function salvarImportacao() {
   if (ja && !confirm(`Já existe uma importação de PDF do ${EMP[emp]} para ${br(data)} (${pl(ja, "apto")}).\n\nSubstituir pela nova? As alterações feitas na anterior serão perdidas.`)) return;
   const ci = addDays(data, -1);
   const lista = imp.itens.filter(i => String(i.apto).trim()).map((i, n) => ({
-    id: `${prefixo}${String(i.apto).trim()}-${i.reserva || "x"}-${n}`, emp, apto: String(i.apto).trim(),
+    id: `${prefixo}${String(i.apto).trim()}-${String(i.reserva || "x").trim()}-${n}`, emp, apto: String(i.apto).trim(), reserva: String(i.reserva || "").trim(),
     hospede: String(i.hospede).trim(), acompanhante: String(i.acompanhante).trim(),
     adultos: Math.max(0, parseInt(i.adultos) || 0), criancas: Math.max(0, parseInt(i.criancas) || 0),
     checkin: ci, checkout: data, cafe: !!i.cafe, obs: String(i.obs).trim()
@@ -783,18 +786,18 @@ function renderReservas() {
   const q = $("busca").value.trim().toLowerCase(), fe = $("filtroEmp").value, per = $("filtroPer").value, h = hoje();
   const lista = db.reservas
     .filter(r => (!fe || r.emp === fe) && (per === "todas" || r.checkout >= h) &&
-      (!q || String(r.apto).toLowerCase().includes(q) || String(r.hospede || "").toLowerCase().includes(q) || String(r.acompanhante || "").toLowerCase().includes(q)))
+      (!q || String(r.apto).toLowerCase().includes(q) || String(r.reserva || "").toLowerCase().includes(q) ||String(r.hospede || "").toLowerCase().includes(q) || String(r.acompanhante || "").toLowerCase().includes(q)))
     .sort((a, b) => a.checkin.localeCompare(b.checkin) || a.emp.localeCompare(b.emp) || String(a.apto).localeCompare(String(b.apto), "pt-BR", { numeric: true }));
   $("listaRes").innerHTML = lista.length ? lista.map(r => `<tr>
       <td><span class="tag e${r.emp}">${r.emp === "9006" ? "9006" : "Madero"}</span></td>
-      <td><b>${esc(r.apto)}</b></td><td>${esc(r.hospede)}</td><td>${esc(r.acompanhante)}</td>
+      <td><b>${esc(r.apto)}</b></td><td>${esc(r.reserva)}</td><td>${esc(r.hospede)}</td><td>${esc(r.acompanhante)}</td>
       <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
       <td>${doPdf(r) ? '<small>PDF</small>' : br(r.checkin)}</td><td>${doPdf(r) ? `café de ${br(r.checkout)}` : br(r.checkout)}</td>
       <td>${r.cafe ? "✔" : '<span class="tag no">sem café</span>'}</td>
       <td><small>${esc(r.obs)}</small></td>
       <td style="white-space:nowrap"><button class="btn sec small" data-edit="${esc(r.id)}">Editar</button>
         <button class="btn danger small" data-del="${esc(r.id)}">✕</button></td></tr>`).join("")
-    : `<tr><td colspan="11" class="empty">Nenhuma reserva encontrada.</td></tr>`;
+    : `<tr><td colspan="12" class="empty">Nenhuma reserva encontrada.</td></tr>`;
 }
 
 // ---------- render: config ----------
@@ -899,7 +902,7 @@ $("fIn").onchange = () => { if ($("fIn").value && (!$("fOut").value || $("fOut")
 $("formRes").onsubmit = async e => {
   e.preventDefault();
   const r = {
-    id: editId || uid(), emp: $("fEmp").value, apto: $("fApto").value.trim(), hospede: $("fHosp").value.trim(), acompanhante: $("fAcomp").value.trim(),
+    id: editId || uid(), emp: $("fEmp").value, apto: $("fApto").value.trim(), reserva: $("fReserva").value.trim(), hospede: $("fHosp").value.trim(), acompanhante: $("fAcomp").value.trim(),
     adultos: Math.max(0, parseInt($("fAd").value) || 0), criancas: Math.max(0, parseInt($("fCr").value) || 0),
     checkin: $("fIn").value, checkout: $("fOut").value, cafe: $("fCafe").checked, obs: $("fObs").value.trim()
   };
@@ -917,7 +920,7 @@ $("listaRes").onclick = async e => {
   const ed = e.target.dataset.edit, del = e.target.dataset.del;
   if (ed) {
     const r = db.reservas.find(x => x.id === ed); if (!r) return;
-    editId = r.id; $("fEmp").value = r.emp; $("fApto").value = r.apto; $("fHosp").value = r.hospede || ""; $("fAcomp").value = r.acompanhante || "";
+    editId = r.id; $("fEmp").value = r.emp; $("fApto").value = r.apto; $("fReserva").value = r.reserva || ""; $("fHosp").value = r.hospede || ""; $("fAcomp").value = r.acompanhante || "";
     $("fAd").value = r.adultos; $("fCr").value = r.criancas; $("fIn").value = r.checkin; $("fOut").value = r.checkout;
     $("fCafe").checked = r.cafe; $("fObs").value = r.obs || "";
     $("formTitulo").textContent = `Editando apto ${r.apto}`; $("btnSalvar").textContent = "Salvar alterações"; $("btnCancelar").style.display = "";

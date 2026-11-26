@@ -24,6 +24,8 @@ create table if not exists public.reservas (
 create index if not exists reservas_checkout_idx on public.reservas (checkout);
 -- (atualização 26/11/2026) nome do(s) acompanhante(s) no relatório
 alter table public.reservas add column if not exists acompanhante text not null default '';
+-- (atualização 26/11/2026) número da reserva do sistema do hotel, em coluna própria
+alter table public.reservas add column if not exists reserva text not null default '';
 
 -- ---------- Extras do dia (day use, café avulso, convidados) ----------
 create table if not exists public.extras (
