@@ -217,7 +217,7 @@ table.rev small{color:var(--muted);font-size:11px}
 
   <div class="card">
     <div class="row" style="margin-bottom:10px">
-      <label style="flex:1;min-width:180px">Buscar<input id="busca" placeholder="apto ou nome"></label>
+      <label style="flex:1;min-width:180px">Buscar<input id="busca" placeholder="apto, nº da reserva ou nome"></label>
       <label>Empreendimento<select id="filtroEmp"><option value="">Todos</option></select></label>
       <label>Mostrar<select id="filtroPer"><option value="ativas">Hospedados e futuras</option><option value="todas">Todas</option></select></label>
     </div>
@@ -351,7 +351,7 @@ function setStatus(tipo, txt) { const s = $("status"); s.className = "status " +
 
 // ---------- camada de gravação (local ou Supabase) ----------
 const okOuErro = r => { if (r && r.error) throw r.error; return r && r.data; };
-const linhaReserva = r => ({ id: r.id, emp: r.emp, apto: String(r.apto), hospede: r.hospede || "", acompanhante: r.acompanhante || "", reserva: String(r.reserva || ""), adultos: +r.adultos || 0, criancas: +r.criancas || 0, checkin: r.checkin, checkout: r.checkout, cafe: !!r.cafe, obs: r.obs || "" });
+const linhaReserva = r => ({ id: r.id, emp: r.emp, apto: String(r.apto), hospede: r.hospede || "", acompanhante: r.acompanhante || "", reserva: String(r.reserva || ""), saida_definida: !saidaIncerta(r), adultos: +r.adultos || 0, criancas: +r.criancas || 0, checkin: r.checkin, checkout: r.checkout, cafe: !!r.cafe, obs: r.obs || "" });
 const linhasExtras = avulsos => Object.entries(avulsos || {}).flatMap(([dia, emps]) => Object.entries(emps || {}).filter(([emp]) => EMP[emp]).map(([emp, v]) => ({ dia, emp, adultos: +v.a || 0, criancas: +v.c || 0 })));
 
 // Grava: no modo local salva no navegador; no online executa fn (chamadas ao Supabase).
@@ -378,10 +378,10 @@ const Store = {
     okOuErro(await sb.from("extras").upsert({ dia, emp, adultos: +v.a || 0, criancas: +v.c || 0 }, { onConflict: "dia,emp" }));
   }),
   salvarConfig: () => gravar(async () => okOuErro(await sb.from("config").upsert({ id: 1, itens: db.itens, margem: +db.margem || 0 }))),
-  // troca de uma vez todos os aptos de uma importação de PDF (mesmo empreendimento + mesmo dia)
-  substituirImportacao: (prefixo, lista) => gravar(async () => {
-    okOuErro(await sb.from("reservas").delete().like("id", prefixo + "%"));
+  // grava o resultado de uma importação de PDF: atualiza/cria estadias e apaga as encerradas sem noites
+  aplicarImportacao: (lista, apagar) => gravar(async () => {
     await upsertEmLotes("reservas", lista.map(linhaReserva));
+    if (apagar.length) okOuErro(await sb.from("reservas").delete().in("id", apagar));
   }),
   apagarAntigas: lim => gravar(async () => {
     okOuErro(await sb.from("reservas").delete().lt("checkout", lim));
@@ -398,7 +398,7 @@ const Store = {
 async function carregar() {
   const lim = addDays(hoje(), -DIAS_HISTORICO);
   const [r, e, c] = await Promise.all([
-    sb.from("reservas").select("id,emp,apto,reserva,hospede,acompanhante,adultos,criancas,checkin,checkout,cafe,obs").gte("checkout", lim).order("checkin").limit(5000),
+    sb.from("reservas").select("id,emp,apto,reserva,saida_definida,hospede,acompanhante,adultos,criancas,checkin,checkout,cafe,obs").gte("checkout", lim).order("checkin").limit(5000),
     sb.from("extras").select("dia,emp,adultos,criancas").gte("dia", lim),
     sb.from("config").select("itens,margem").eq("id", 1).maybeSingle()
   ]);
@@ -423,8 +423,10 @@ function agendarRecarga() {
 // Toma café na manhã do dia D quem dormiu a noite anterior: check-in < D <= check-out
 // A relação lista TODOS os hospedados da noite anterior; só os "com café" entram na contagem.
 const hospedado = (r, dia) => r.checkin < dia && dia <= r.checkout;
-// Aptos vindos do PDF valem só para o dia importado (o PDF não traz a data de saída)
+// Aptos vindos do PDF: o PDF não traz a data de saída. Enquanto ninguém confirmar a saída,
+// o check-out guardado é só "o último dia em que apareceu no PDF".
 const doPdf = r => String(r.id).startsWith("pdf-");
+const saidaIncerta = r => r.saida_definida === false || (r.saida_definida === undefined && doPdf(r));
 
 function resumo(dia) {
   const emp = {};
@@ -494,7 +496,7 @@ function renderRelacao() {
       let rows = o.aptos.map(r => `<tr${r.cafe ? "" : ' style="opacity:.75"'}><td><b>${esc(r.apto)}</b></td>
         <td>${esc(r.hospede)}${r.reserva ? ` <small style="color:var(--muted)">· Res. ${esc(r.reserva)}</small>` : ""}${r.acompanhante ? `<br><small>+ ${esc(r.acompanhante)}</small>` : ""}${r.obs ? `<br><small style="color:var(--muted)">${esc(r.obs)}</small>` : ""}</td>
         <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
-        <td>${r.cafe ? "" : '<span class="tag no">sem café</span> '}${doPdf(r) ? "" : r.checkout === diaSel ? '<span class="tag out">sai hoje</span>' : "até " + brCurto(r.checkout)}</td></tr>`).join("");
+        <td>${r.cafe ? "" : '<span class="tag no">sem café</span> '}${saidaIncerta(r) ? "" : r.checkout === diaSel ? '<span class="tag out">sai hoje</span>' : "até " + brCurto(r.checkout)}</td></tr>`).join("");
       if (!rows) rows = `<tr><td colspan="5" class="empty">Nenhum apartamento hospedado neste dia.</td></tr>`;
       else rows += `<tr class="foot"><td colspan="2">Com café: ${pl(o.aptosCafe, "apto")}${o.semCafe ? ` · sem café: ${o.semCafe}` : ""}</td><td class="num">${o.adultos}</td><td class="num">${o.criancas}</td><td></td></tr>`;
       l += `<div class="card"><h3><span class="tag e${k}">${EMP[k]}</span></h3>
@@ -565,7 +567,7 @@ function renderRelatorio() {
       for (const r of o.aptos) {
         const pessoasApto = (+r.adultos || 0) + (+r.criancas || 0);
         const acomp = r.acompanhante ? esc(r.acompanhante) : (pessoasApto >= 2 ? '<span class="falta">não informado</span>' : "—");
-        const obs = [r.checkout === dia && !doPdf(r) ? "Check-out hoje" : "", esc(r.obs)].filter(Boolean).join(" · ");
+        const obs = [r.checkout === dia && !saidaIncerta(r) ? "Check-out hoje" : "", esc(r.obs)].filter(Boolean).join(" · ");
         h += `<tr class="${r.cafe ? "" : "sem"}"><td><b>${esc(r.apto)}</b></td><td>${esc(r.reserva) || "—"}</td><td>${esc(r.hospede) || "—"}</td><td>${acomp}</td>
           <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
           <td class="num ${r.cafe ? "cafe-sim" : "cafe-nao"}">${r.cafe ? "COM CAFÉ" : "SEM CAFÉ"}</td>
@@ -715,17 +717,56 @@ async function processarPdf(file) {
     imp = {
       arquivo: file.name, data: r.dataTitulo || (r.diaria ? addDays(r.diaria, 1) : addDays(hoje(), 1)),
       totalPdf: r.totalPdf, simLidos: r.pessoas.filter(p => p.cafe).length, hospedesLidos: r.pessoas.length,
-      itens: agruparPorApto(r.pessoas)
+      itens: agruparPorApto(r.pessoas).map(i => ({ ...i, pdf: { ...i } })) // guarda o que veio do PDF
     };
+    prepararImportacao();
     renderRevisao();
   } catch (e) {
     console.error(e);
     $("pdfRevisao").innerHTML = `<div class="alerta">Não consegui ler o PDF: ${esc(e.message || e)}. Verifique a internet e tente de novo.</div>`;
   }
 }
+// Procura a mesma estadia já cadastrada: mesmo empreendimento + nº da reserva + apto
+function acharEstadia(emp, reserva, apto) {
+  reserva = String(reserva || "").trim(); apto = String(apto || "").trim();
+  if (!reserva) return null;
+  return db.reservas.filter(r => r.emp === emp && String(r.reserva || "").trim() === reserva && String(r.apto).trim() === apto)
+    .sort((a, b) => b.checkout.localeCompare(a.checkout))[0] || null;
+}
+// Junta o PDF com o que já existe. Regras:
+//  - titular e adultos/crianças: valem os do PDF (ocupação atual)
+//  - acompanhante e observação: valem os que vocês já digitaram
+//  - café: se já estava COM café, continua COM café mesmo que o PDF diga NÃO
+//  - saída: se já foi confirmada (ex.: dia 29), é mantida; senão vira o dia deste PDF
+function prepararImportacao() {
+  const emp = $("pdfEmp").value, data = imp.data, ontem = addDays(data, -1);
+  for (const i of imp.itens) {
+    const p = i.pdf, ex = acharEstadia(emp, p.reserva, p.apto);
+    Object.assign(i, { apto: p.apto, reserva: p.reserva, hospede: p.hospede, acompanhante: p.acompanhante, adultos: p.adultos, criancas: p.criancas, cafe: p.cafe, obs: p.obs });
+    i.exId = ex ? ex.id : null; i.cafeMantido = false;
+    if (ex) {
+      i.hospede = p.hospede || ex.hospede;
+      i.acompanhante = ex.acompanhante || p.acompanhante;
+      if (!p.cafe && ex.cafe) { i.cafe = true; i.cafeMantido = true; }
+      const obsEx = String(ex.obs || "").split(" · ").filter(o => o && !o.startsWith("Sem café:"));
+      i.obs = [...obsEx, p.obs].filter(Boolean).join(" · ");
+      i.checkin = ex.checkin < ontem ? ex.checkin : ontem;
+      i.saida = ex.checkout > data ? ex.checkout : data;
+      i.saidaDefinida = !saidaIncerta(ex) && ex.checkout >= data;
+    } else {
+      i.checkin = ontem; i.saida = data; i.saidaDefinida = false;
+    }
+  }
+  // quem o sistema esperava para este dia e não veio no PDF (saiu antes / não está mais no hotel)
+  const achados = new Set(imp.itens.map(i => i.exId).filter(Boolean));
+  imp.ausentes = db.reservas
+    .filter(r => r.emp === emp && hospedado(r, data) && !achados.has(r.id) && (doPdf(r) || String(r.reserva || "").trim()))
+    .map(r => ({ id: r.id, apto: r.apto, reserva: r.reserva, hospede: r.hospede, checkout: r.checkout, encerrar: true }));
+}
 function renderRevisao() {
   const el = $("pdfRevisao");
   if (!imp) { el.innerHTML = ""; return; }
+  const existentes = imp.itens.filter(i => i.exId).length, mantidos = imp.itens.filter(i => i.cafeMantido).length;
   const pessoasCafe = imp.itens.filter(i => i.cafe).reduce((s, i) => s + (+i.adultos || 0) + (+i.criancas || 0), 0);
   const semNomeTotal = imp.itens.reduce((s, i) => s + (i.semNome && !i.acompanhante ? i.semNome : 0), 0);
   let aviso = "";
@@ -736,47 +777,69 @@ function renderRevisao() {
     <div class="row rev-head">
       <label>Data do café<input type="date" id="impData" value="${imp.data}"></label>
       <div class="hint" style="margin:0;flex:1"><b>${esc(imp.arquivo)}</b><br>${imp.hospedesLidos} hóspedes lidos → ${pl(imp.itens.length, "apto")} ·
-        <b>${pl(pessoasCafe, "pessoa")} com café</b>${semNomeTotal ? ` · ${semNomeTotal} acompanhante(s) sem nome no PDF (campos em amarelo)` : ""}</div>
+        <b>${pl(pessoasCafe, "pessoa")} com café</b>${semNomeTotal ? ` · ${semNomeTotal} acompanhante(s) sem nome no PDF (campos em amarelo)` : ""}
+        <br>${imp.itens.length - existentes} nova(s) ·<b>${existentes} já cadastrada(s)</b> (mantém acompanhantes, observações e café)${mantidos ? ` · <b>${mantidos} com café mantido</b>` : ""}</div>
       ${aviso}
     </div>
     <div style="overflow-x:auto"><table class="rev">
-      <thead><tr><th style="width:80px">Apto</th><th style="width:80px">Reserva</th><th>Titular</th><th>Acompanhante(s)</th><th style="width:60px">Ad.</th><th style="width:60px">Cr.</th><th style="width:110px">Café</th><th>Obs.</th><th></th></tr></thead>
+      <thead><tr><th style="width:80px">Apto</th><th style="width:80px">Reserva</th><th>Titular</th><th>Acompanhante(s)</th><th style="width:60px">Ad.</th><th style="width:60px">Cr.</th><th style="width:120px">Café</th><th style="width:130px">Saída</th><th>Obs.</th><th></th></tr></thead>
       <tbody>${imp.itens.map((i, n) => `<tr class="${i.cafe ? "" : "sem"}">
-        <td><input data-i="${n}" data-f="apto" value="${esc(i.apto)}"><small>${esc(i.tipo)}</small></td>
+        <td><input data-i="${n}" data-f="apto" value="${esc(i.apto)}"><small>${i.exId ? "↻ já cadastrada" : "nova"}</small></td>
         <td><input data-i="${n}" data-f="reserva" value="${esc(i.reserva)}"></td>
         <td><input data-i="${n}" data-f="hospede" value="${esc(i.hospede)}"></td>
         <td><input data-i="${n}" data-f="acompanhante" value="${esc(i.acompanhante)}" class="${i.semNome && !i.acompanhante ? "falta" : ""}"
              placeholder="${i.semNome ? `${i.semNome} acompanhante(s) sem nome no PDF` : ""}"></td>
         <td><input type="number" min="0" data-i="${n}" data-f="adultos" value="${i.adultos}"></td>
         <td><input type="number" min="0" data-i="${n}" data-f="criancas" value="${i.criancas}"></td>
-        <td><select data-i="${n}" data-f="cafe"><option value="1"${i.cafe ? " selected" : ""}>COM café</option><option value="0"${i.cafe ? "" : " selected"}>SEM café</option></select></td>
+        <td><select data-i="${n}" data-f="cafe"><option value="1"${i.cafe ? " selected" : ""}>COM café</option><option value="0"${i.cafe ? "" : " selected"}>SEM café</option></select>
+          ${i.cafeMantido ? '<small>mantido (o PDF diz NÃO)</small>' : ""}</td>
+        <td><input type="date" data-i="${n}" data-f="saida" value="${i.saida}" min="${imp.data}">
+          <small>${i.saidaDefinida ? "confirmada" : "a confirmar"}</small></td>
         <td><input data-i="${n}" data-f="obs" value="${esc(i.obs)}"></td>
         <td><button class="btn danger small" data-rm="${n}" title="Tirar da importação">✕</button></td></tr>`).join("")}
       </tbody></table></div>
+    ${imp.ausentes.length ? `<div class="alerta" style="margin-top:12px"><b>${pl(imp.ausentes.length, "apto")} estava(m) previsto(s) para ${br(imp.data)} e não aparece(m) neste PDF.</b>
+      Marcados = a estadia termina no dia anterior (o hóspede já saiu). Desmarque se for engano.
+      <div style="margin-top:6px">${imp.ausentes.map((a, n) => `<label class="chk" style="padding:2px 0"><input type="checkbox" data-aus="${n}"${a.encerrar ? " checked" : ""}>
+        Apto <b>${esc(a.apto)}</b>${a.reserva ? ` · Res. ${esc(a.reserva)}` : ""} · ${esc(a.hospede) || "—"} (previsto até ${br(a.checkout)})</label>`).join("")}</div></div>` : ""}
     <div class="row" style="margin-top:10px">
       <button class="btn" id="btnImpSalvar">Salvar ${pl(imp.itens.length, "apto")} no sistema</button>
       <button class="btn sec" id="btnImpCancelar">Cancelar</button>
     </div>`;
 }
 async function salvarImportacao() {
-  const emp = $("pdfEmp").value, data = $("impData").value;
+  const emp = $("pdfEmp").value, data = imp.data;
   if (!data) { toast("Informe a data do café."); return; }
-  const prefixo = `pdf-${emp}-${data}-`;
-  const ja = db.reservas.filter(r => String(r.id).startsWith(prefixo)).length;
-  if (ja && !confirm(`Já existe uma importação de PDF do ${EMP[emp]} para ${br(data)} (${pl(ja, "apto")}).\n\nSubstituir pela nova? As alterações feitas na anterior serão perdidas.`)) return;
-  const ci = addDays(data, -1);
-  const lista = imp.itens.filter(i => String(i.apto).trim()).map((i, n) => ({
-    id: `${prefixo}${String(i.apto).trim()}-${String(i.reserva || "x").trim()}-${n}`, emp, apto: String(i.apto).trim(), reserva: String(i.reserva || "").trim(),
-    hospede: String(i.hospede).trim(), acompanhante: String(i.acompanhante).trim(),
-    adultos: Math.max(0, parseInt(i.adultos) || 0), criancas: Math.max(0, parseInt(i.criancas) || 0),
-    checkin: ci, checkout: data, cafe: !!i.cafe, obs: String(i.obs).trim()
-  }));
-  db.reservas = db.reservas.filter(r => !String(r.id).startsWith(prefixo)).concat(lista);
+  const usados = new Set();
+  const lista = imp.itens.filter(i => String(i.apto).trim()).map(i => {
+    const apto = String(i.apto).trim(), reserva = String(i.reserva || "").trim();
+    // se o apto/reserva foi corrigido na conferência, procura de novo a estadia certa
+    const ex = (i.exId && apto === i.pdf.apto && reserva === i.pdf.reserva) ? db.reservas.find(r => r.id === i.exId) : acharEstadia(emp, reserva, apto);
+    let id = ex && !usados.has(ex.id) ? ex.id : `pdf-${emp}-${reserva || "x"}-${apto}-${data}`;
+    while (usados.has(id)) id += "b";
+    usados.add(id);
+    const saida = i.saida && i.saida >= data ? i.saida : data;
+    return {
+      id, emp, apto, reserva, hospede: String(i.hospede).trim(), acompanhante: String(i.acompanhante).trim(),
+      adultos: Math.max(0, parseInt(i.adultos) || 0), criancas: Math.max(0, parseInt(i.criancas) || 0),
+      checkin: ex && ex.checkin < i.checkin ? ex.checkin : i.checkin, checkout: saida,
+      cafe: !!i.cafe, obs: String(i.obs).trim(), saida_definida: !!i.saidaDefinida
+    };
+  });
+  // encerra as estadias que não vieram no PDF (marcadas na conferência)
+  const encerradas = [], apagar = [];
+  for (const a of imp.ausentes.filter(a => a.encerrar)) {
+    const r = db.reservas.find(x => x.id === a.id); if (!r) continue;
+    const fim = addDays(data, -1);
+    if (fim <= r.checkin) apagar.push(r.id); else encerradas.push({ ...r, checkout: fim, saida_definida: true });
+  }
+  const gravar_ = lista.concat(encerradas), ids = new Set(gravar_.map(r => r.id).concat(apagar));
+  db.reservas = db.reservas.filter(r => !ids.has(r.id)).concat(gravar_);
   localStorage.setItem("cafe-pdf-emp", emp);
   imp = null; renderRevisao();
   diaSel = data; renderTudo();
-  if (await Store.substituirImportacao(prefixo, lista)) {
-    toast(`${pl(lista.length, "apto")} importado(s) para o café de ${br(data)}.`, 3500);
+  if (await Store.aplicarImportacao(gravar_, apagar)) {
+    toast(`${pl(lista.length, "apto")} salvo(s) para o café de ${br(data)}${encerradas.length + apagar.length ? ` · ${encerradas.length + apagar.length} estadia(s) encerrada(s)` : ""}.`, 4000);
     document.querySelector('nav button[data-tab="relacao"]').click();
   }
 }
@@ -792,7 +855,7 @@ function renderReservas() {
       <td><span class="tag e${r.emp}">${r.emp === "9006" ? "9006" : "Madero"}</span></td>
       <td><b>${esc(r.apto)}</b></td><td>${esc(r.reserva)}</td><td>${esc(r.hospede)}</td><td>${esc(r.acompanhante)}</td>
       <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
-      <td>${doPdf(r) ? '<small>PDF</small>' : br(r.checkin)}</td><td>${doPdf(r) ? `café de ${br(r.checkout)}` : br(r.checkout)}</td>
+      <td>${br(r.checkin)}</td><td>${br(r.checkout)}${saidaIncerta(r) ? '<br><small style="color:var(--muted)">a confirmar</small>' : ""}</td>
       <td>${r.cafe ? "✔" : '<span class="tag no">sem café</span>'}</td>
       <td><small>${esc(r.obs)}</small></td>
       <td style="white-space:nowrap"><button class="btn sec small" data-edit="${esc(r.id)}">Editar</button>
@@ -876,13 +939,17 @@ $("pdfRevisao").addEventListener("input", e => {
   const el = e.target; if (!imp || el.dataset.i === undefined) return;
   const it = imp.itens[+el.dataset.i], f = el.dataset.f;
   it[f] = f === "cafe" ? el.value === "1" : el.value;
+  if (f === "cafe") it.cafeMantido = false;
+  if (f === "saida") it.saidaDefinida = true;
   if (f === "acompanhante") el.classList.toggle("falta", !!(it.semNome && !el.value.trim()));
 });
 $("pdfRevisao").addEventListener("change", e => {
-  const el = e.target;
-  if (el.id === "impData") { imp.data = el.value; return; }
-  if (el.dataset.f === "cafe" || el.dataset.f === "adultos" || el.dataset.f === "criancas") renderRevisao(); // atualiza totais
+  const el = e.target; if (!imp) return;
+  if (el.id === "impData") { if (el.value) { imp.data = el.value; prepararImportacao(); renderRevisao(); } return; }
+  if (el.dataset.aus !== undefined) { imp.ausentes[+el.dataset.aus].encerrar = el.checked; return; }
+  if (["cafe", "adultos", "criancas", "saida"].includes(el.dataset.f)) renderRevisao(); // atualiza totais e avisos
 });
+$("pdfEmp").addEventListener("change", () => { if (imp) { prepararImportacao(); renderRevisao(); } });
 $("pdfRevisao").addEventListener("click", e => {
   if (!imp) return;
   if (e.target.dataset.rm !== undefined) { imp.itens.splice(+e.target.dataset.rm, 1); renderRevisao(); }
@@ -906,6 +973,9 @@ $("formRes").onsubmit = async e => {
     adultos: Math.max(0, parseInt($("fAd").value) || 0), criancas: Math.max(0, parseInt($("fCr").value) || 0),
     checkin: $("fIn").value, checkout: $("fOut").value, cafe: $("fCafe").checked, obs: $("fObs").value.trim()
   };
+  // saída confirmada: reserva digitada à mão, ou check-out alterado aqui; senão mantém como estava
+  const orig = editId ? db.reservas.find(x => x.id === editId) : null;
+  r.saida_definida = !orig || !saidaIncerta(orig) || r.checkout !== orig.checkout;
   if (r.checkout <= r.checkin) { toast("O check-out precisa ser depois do check-in."); return; }
   if (r.adultos + r.criancas >= 2 && !r.acompanhante &&
       !confirm(`O apto ${r.apto} tem ${r.adultos + r.criancas} pessoas, mas o nome do acompanhante está vazio.\n\nSalvar assim mesmo?`)) { $("fAcomp").focus(); return; }
