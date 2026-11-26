@@ -145,6 +145,7 @@ table.rev small{color:var(--muted);font-size:11px}
       <button class="btn sec noprint" id="btnAmanha">Amanhã</button>
       <button class="btn sec noprint" id="btnNext">▶</button>
       <input type="date" id="dia" class="noprint">
+      <button class="btn sec noprint" id="btnImportarPdf">📄 Importar PDF</button>
       <button class="btn noprint" id="btnImprimirRel">🖨 Imprimir relação</button>
     </div>
     <div class="week" id="semana"></div>
@@ -178,7 +179,7 @@ table.rev small{color:var(--muted);font-size:11px}
       O PDF é lido aqui mesmo no navegador e não é enviado para nenhum lugar. Antes de salvar, você confere e corrige tudo.</p>
     <div class="row">
       <label>Empreendimento deste PDF<select id="pdfEmp"></select></label>
-      <label class="drop" id="pdfDrop">📄 Solte o PDF aqui ou <u>clique para escolher</u>
+      <label class="drop" id="pdfDrop">📄 Arraste o PDF para cá (ou para qualquer lugar da página) ou <u>clique para escolher</u>
         <input type="file" id="pdfFile" accept="application/pdf,.pdf" hidden></label>
     </div>
     <div id="pdfRevisao"></div>
@@ -853,7 +854,21 @@ if (EMP[localStorage.getItem("cafe-pdf-emp")]) $("pdfEmp").value = localStorage.
 $("pdfFile").onchange = e => { processarPdf(e.target.files[0]); e.target.value = ""; };
 ["dragenter", "dragover"].forEach(ev => $("pdfDrop").addEventListener(ev, e => { e.preventDefault(); $("pdfDrop").classList.add("over"); }));
 ["dragleave", "drop"].forEach(ev => $("pdfDrop").addEventListener(ev, e => { e.preventDefault(); $("pdfDrop").classList.remove("over"); }));
-$("pdfDrop").addEventListener("drop", e => processarPdf(e.dataTransfer.files[0]));
+$("pdfDrop").addEventListener("drop", e => { e.stopPropagation(); irParaImportacao(); processarPdf(e.dataTransfer.files[0]); });
+function irParaImportacao() {
+  document.querySelector('nav button[data-tab="reservas"]').click();
+  $("cardPdf").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+// botão na tela principal: vai para o quadro de importação e já abre a escolha do arquivo
+$("btnImportarPdf").onclick = () => { irParaImportacao(); $("pdfFile").click(); };
+// soltar o PDF em qualquer lugar da página também funciona
+window.addEventListener("dragover", e => { if ([...(e.dataTransfer?.types || [])].includes("Files")) e.preventDefault(); });
+window.addEventListener("drop", e => {
+  const f = e.dataTransfer?.files?.[0]; if (!f) return;
+  e.preventDefault();
+  if (!$("login").hidden) { toast("Entre no sistema antes de importar o PDF."); return; }
+  irParaImportacao(); processarPdf(f);
+});
 $("pdfRevisao").addEventListener("input", e => {
   const el = e.target; if (!imp || el.dataset.i === undefined) return;
   const it = imp.itens[+el.dataset.i], f = el.dataset.f;
