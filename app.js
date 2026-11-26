@@ -394,6 +394,10 @@ async function linhasDoPdf(file) {
   }
   return linhas;
 }
+// Reservas com número acima deste já vêm com café da manhã incluso
+const RESERVA_COM_CAFE = 20208;
+const cafeAuto = res => /^\d+$/.test(String(res || "").trim()) && +String(res).trim() > RESERVA_COM_CAFE;
+
 const COLS = { HOSPEDE: "hospede", FAIXA: "faixa", PENSAO: "pensao", UH: "uh", RESERVA: "reserva", CAFE: "cafe", ALMOCO: "almoco", JANTAR: "jantar" };
 function celulas(l, cols) {
   const ord = Object.entries(cols).sort((a, b) => a[1] - b[1]);
@@ -429,7 +433,7 @@ function interpretarPdf(linhas) {
     const cafe = semAcento(c.cafe);
     if (!c.hospede || !/^\d+$/.test(c.reserva || "") || !/^(SIM|NAO)$/.test(cafe)) continue;
     const uh = (c.uh || "").match(/^(\S+)\s*-\s*(.*)$/);
-    pessoas.push({ nome: c.hospede, faixa: c.faixa || "", apto: uh ? uh[1] : (c.uh || ""), tipo: uh ? uh[2] : "", reserva: c.reserva, cafe: cafe === "SIM" });
+    pessoas.push({ nome: c.hospede, faixa: c.faixa || "", apto: uh ? uh[1] : (c.uh || ""), tipo: uh ? uh[2] : "", reserva: c.reserva, cafe: cafe === "SIM" || cafeAuto(c.reserva) });
   }
   return { pessoas, dataTitulo, diaria, totalPdf };
 }
@@ -828,6 +832,8 @@ function limparForm() {
   acompForm = []; renderAcompForm();
   $("formTitulo").textContent = "Nova reserva"; $("btnSalvar").textContent = "Adicionar"; $("btnCancelar").style.display = "none";
 }
+// reserva nova com número acima de 20208 já marca café incluso
+$("fReserva").addEventListener("input", () => { if (!editId && cafeAuto($("fReserva").value)) $("fCafe").checked = true; });
 $("fIn").onchange = () => { if ($("fIn").value && (!$("fOut").value || $("fOut").value <= $("fIn").value)) $("fOut").value = addDays($("fIn").value, 1); };
 $("formRes").onsubmit = async e => {
   e.preventDefault();
