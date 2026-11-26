@@ -59,6 +59,11 @@ let diaSel = addDays(hoje(), 1);
 
 // número seguro para ir ao HTML (dados do banco/backup nunca entram crus na página)
 const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+// Acompanhantes: no banco ficam num texto só ("Ana, João, Bia"); nas telas, um campo por pessoa
+const listaAcomp = s => String(s || "").split(/\s*[,;\n]\s*/).map(t => t.trim()).filter(Boolean);
+const juntarAcomp = arr => arr.map(t => String(t).trim()).filter(Boolean).join(", ");
+// quantos campos mostrar: todos do apto menos o titular (e nunca menos que os nomes já salvos)
+const qtdAcomp = (ad, cr, nomes) => Math.min(29, Math.max(num(ad) + num(cr) - 1, nomes.length, 0));
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const $ = id => document.getElementById(id);
 const uid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
@@ -236,7 +241,7 @@ function renderRelacao() {
     for (const k in EMP) {
       const o = res.emp[k];
       let rows = o.aptos.map(r => `<tr${r.cafe ? "" : ' style="opacity:.75"'}><td><b>${esc(r.apto)}</b></td>
-        <td>${esc(r.hospede)}${r.reserva ? ` <small style="color:var(--muted)">· Res. ${esc(r.reserva)}</small>` : ""}${r.acompanhante ? `<br><small>+ ${esc(r.acompanhante)}</small>` : ""}${r.obs ? `<br><small style="color:var(--muted)">${esc(r.obs)}</small>` : ""}</td>
+        <td>${esc(r.hospede)}${r.reserva ? ` <small style="color:var(--muted)">· Res. ${esc(r.reserva)}</small>` : ""}${listaAcomp(r.acompanhante).map(a => `<br><small>+ ${esc(a)}</small>`).join("")}${r.obs ? `<br><small style="color:var(--muted)">${esc(r.obs)}</small>` : ""}</td>
         <td class="num">${num(r.adultos)}</td><td class="num">${num(r.criancas)}</td>
         <td>${r.cafe ? "" : '<span class="tag no">sem café</span> '}${saidaIncerta(r) ? "" : r.checkout === diaSel ? '<span class="tag out">sai hoje</span>' : "até " + brCurto(r.checkout)}</td></tr>`).join("");
       if (!rows) rows = `<tr><td colspan="5" class="empty">Nenhum apartamento hospedado neste dia.</td></tr>`;
@@ -309,7 +314,9 @@ function renderRelatorio() {
         <th>Observação</th><th class="num chk">✓</th></tr></thead><tbody>`;
       for (const r of o.aptos) {
         const pessoasApto = (+r.adultos || 0) + (+r.criancas || 0);
-        const acomp = r.acompanhante ? esc(r.acompanhante) : (pessoasApto >= 2 ? '<span class="falta">não informado</span>' : "—");
+        const nomes = listaAcomp(r.acompanhante), semNome = Math.max(0, pessoasApto - 1 - nomes.length);
+        const acomp = [...nomes.map(esc), semNome ? `<span class="falta">${semNome > 1 ? `${semNome} sem nome` : "não informado"}</span>` : ""]
+          .filter(Boolean).join("<br>") || "—";
         const obs = [r.checkout === dia && !saidaIncerta(r) ? "Check-out hoje" : "", esc(r.obs)].filter(Boolean).join(" · ");
         h += `<tr class="${r.cafe ? "" : "sem"}"><td><b>${esc(r.apto)}</b></td><td>${esc(r.reserva) || "—"}</td><td>${esc(r.hospede) || "—"}</td><td>${acomp}</td>
           <td class="num">${num(r.adultos)}</td><td class="num">${num(r.criancas)}</td>
@@ -517,7 +524,7 @@ function renderRevisao() {
   if (!imp) { el.innerHTML = ""; return; }
   const existentes = imp.itens.filter(i => i.exId).length, mantidos = imp.itens.filter(i => i.cafeMantido).length;
   const pessoasCafe = imp.itens.filter(i => i.cafe).reduce((s, i) => s + (+i.adultos || 0) + (+i.criancas || 0), 0);
-  const semNomeTotal = imp.itens.reduce((s, i) => s + (i.semNome && !i.acompanhante ? i.semNome : 0), 0);
+  const semNomeTotal = imp.itens.reduce((s, i) => { const nomes = listaAcomp(i.acompanhante); return s + Math.max(0, qtdAcomp(i.adultos, i.criancas, nomes) - nomes.length); }, 0);
   let aviso = "";
   if (imp.totalPdf !== null) aviso = imp.totalPdf === imp.simLidos
     ? `<span class="okb">✓ O PDF diz ${imp.totalPdf} cafés e foram lidos ${imp.simLidos}.</span>`
@@ -526,7 +533,7 @@ function renderRevisao() {
     <div class="row rev-head">
       <label>Data do café<input type="date" id="impData" value="${imp.data}"></label>
       <div class="hint" style="margin:0;flex:1"><b>${esc(imp.arquivo)}</b><br>${imp.hospedesLidos} hóspedes lidos → ${pl(imp.itens.length, "apto")} ·
-        <b>${pl(pessoasCafe, "pessoa")} com café</b>${semNomeTotal ? ` · ${semNomeTotal} acompanhante(s) sem nome no PDF (campos em amarelo)` : ""}
+        <b>${pl(pessoasCafe, "pessoa")} com café</b>${semNomeTotal ? ` · <b>${semNomeTotal} acompanhante(s) sem nome</b> (campos em amarelo)` : ""}
         <br>${imp.itens.length - existentes} nova(s) ·<b>${existentes} já cadastrada(s)</b> (mantém acompanhantes, observações e café)${mantidos ? ` · <b>${mantidos} com café mantido</b>` : ""}</div>
       ${aviso}
     </div>
@@ -536,8 +543,12 @@ function renderRevisao() {
         <td><input data-i="${n}" data-f="apto" value="${esc(i.apto)}"><small>${i.exId ? "↻ já cadastrada" : "nova"}</small></td>
         <td><input data-i="${n}" data-f="reserva" value="${esc(i.reserva)}"></td>
         <td><input data-i="${n}" data-f="hospede" value="${esc(i.hospede)}"></td>
-        <td><input data-i="${n}" data-f="acompanhante" value="${esc(i.acompanhante)}" class="${i.semNome && !i.acompanhante ? "falta" : ""}"
-             placeholder="${i.semNome ? `${i.semNome} acompanhante(s) sem nome no PDF` : ""}"></td>
+        <td>${(() => {
+          const nomes = listaAcomp(i.acompanhante), qtd = qtdAcomp(i.adultos, i.criancas, nomes);
+          return qtd ? Array.from({ length: qtd }, (_, j) => `<input data-i="${n}" data-f="acomp" data-k="${j}" value="${esc(nomes[j] || "")}"
+            placeholder="Acompanhante ${j + 1}${!nomes[j] && i.semNome ? " (sem nome no PDF)" : ""}" class="${nomes[j] ? "" : "falta"}">`).join("")
+            : '<small>só o titular</small>';
+        })()}</td>
         <td><input type="number" min="0" data-i="${n}" data-f="adultos" value="${num(i.adultos)}"></td>
         <td><input type="number" min="0" data-i="${n}" data-f="criancas" value="${num(i.criancas)}"></td>
         <td><select data-i="${n}" data-f="cafe"><option value="1"${i.cafe ? " selected" : ""}>COM café</option><option value="0"${i.cafe ? "" : " selected"}>SEM café</option></select>
@@ -600,7 +611,7 @@ function renderReservas() {
     .sort((a, b) => a.checkin.localeCompare(b.checkin) || a.emp.localeCompare(b.emp) || String(a.apto).localeCompare(String(b.apto), "pt-BR", { numeric: true }));
   $("listaRes").innerHTML = lista.length ? lista.map(r => `<tr>
       <td><span class="tag e${esc(r.emp)}">${r.emp === "9006" ? "9006" : "Madero"}</span></td>
-      <td><b>${esc(r.apto)}</b></td><td>${esc(r.reserva)}</td><td>${esc(r.hospede)}</td><td>${esc(r.acompanhante)}</td>
+      <td><b>${esc(r.apto)}</b></td><td>${esc(r.reserva)}</td><td>${esc(r.hospede)}</td><td>${listaAcomp(r.acompanhante).map(esc).join("<br>")}</td>
       <td class="num">${num(r.adultos)}</td><td class="num">${num(r.criancas)}</td>
       <td>${br(r.checkin)}</td><td>${br(r.checkout)}</td>
       <td>${r.cafe ? "✔" : '<span class="tag no">sem café</span>'}</td>
@@ -747,7 +758,12 @@ $("pdfRevisao").addEventListener("input", e => {
   it[f] = f === "cafe" ? el.value === "1" : el.value;
   if (f === "cafe") it.cafeMantido = false;
   if (f === "saida") it.saidaDefinida = true;
-  if (f === "acompanhante") el.classList.toggle("falta", !!(it.semNome && !el.value.trim()));
+  if (f === "acomp") {   // junta os campos de acompanhante daquele apto num texto só
+    delete it.acomp;
+    const campos = [...document.querySelectorAll(`#pdfRevisao [data-i='${el.dataset.i}'][data-f='acomp']`)];
+    it.acompanhante = juntarAcomp(campos.map(c => c.value));
+    el.classList.toggle("falta", !el.value.trim());
+  }
 });
 $("pdfRevisao").addEventListener("change", e => {
   const el = e.target; if (!imp) return;
@@ -766,16 +782,28 @@ $("pdfRevisao").addEventListener("click", e => {
 // formulário de reserva
 for (const k in EMP) { $("fEmp").add(new Option(EMP[k], k)); $("filtroEmp").add(new Option(EMP[k], k)); }
 let editId = null;
+// campos de acompanhante do cadastro manual (os nomes digitados ficam guardados mesmo se a quantidade mudar)
+let acompForm = [];
+const qtdAcompForm = () => Math.min(29, Math.max(num($("fAd").value) + num($("fCr").value) - 1, 0));
+function renderAcompForm() {
+  const qtd = qtdAcompForm(), box = $("fAcompBox");
+  box.innerHTML = qtd
+    ? Array.from({ length: qtd }, (_, j) => `<input data-acomp="${j}" placeholder="Acompanhante ${j + 1}" value="${esc(acompForm[j] || "")}">`).join("")
+    : '<span class="hint" style="margin:0">Só o titular (1 pessoa) — sem acompanhantes.</span>';
+}
+$("fAcompBox").addEventListener("input", e => { const j = e.target.dataset.acomp; if (j !== undefined) acompForm[+j] = e.target.value; });
+["fAd", "fCr"].forEach(id => $(id).addEventListener("input", renderAcompForm));
 function limparForm() {
   editId = null; $("formRes").reset();
   $("fIn").value = hoje(); $("fOut").value = addDays(hoje(), 1);
+  acompForm = []; renderAcompForm();
   $("formTitulo").textContent = "Nova reserva"; $("btnSalvar").textContent = "Adicionar"; $("btnCancelar").style.display = "none";
 }
 $("fIn").onchange = () => { if ($("fIn").value && (!$("fOut").value || $("fOut").value <= $("fIn").value)) $("fOut").value = addDays($("fIn").value, 1); };
 $("formRes").onsubmit = async e => {
   e.preventDefault();
   const r = {
-    id: editId || uid(), emp: $("fEmp").value, apto: $("fApto").value.trim(), reserva: $("fReserva").value.trim(), hospede: $("fHosp").value.trim(), acompanhante: $("fAcomp").value.trim(),
+    id: editId || uid(), emp: $("fEmp").value, apto: $("fApto").value.trim(), reserva: $("fReserva").value.trim(), hospede: $("fHosp").value.trim(), acompanhante: juntarAcomp(acompForm.slice(0, qtdAcompForm())),
     adultos: Math.max(0, parseInt($("fAd").value) || 0), criancas: Math.max(0, parseInt($("fCr").value) || 0),
     checkin: $("fIn").value, checkout: $("fOut").value, cafe: $("fCafe").checked, obs: $("fObs").value.trim()
   };
@@ -783,8 +811,10 @@ $("formRes").onsubmit = async e => {
   const orig = editId ? db.reservas.find(x => x.id === editId) : null;
   r.saida_definida = !orig || !saidaIncerta(orig) || r.checkout !== orig.checkout;
   if (r.checkout <= r.checkin) { toast("O check-out precisa ser depois do check-in."); return; }
-  if (r.adultos + r.criancas >= 2 && !r.acompanhante &&
-      !confirm(`O apto ${r.apto} tem ${r.adultos + r.criancas} pessoas, mas o nome do acompanhante está vazio.\n\nSalvar assim mesmo?`)) { $("fAcomp").focus(); return; }
+  const faltam = Math.max(0, r.adultos + r.criancas - 1 - listaAcomp(r.acompanhante).length);
+  if (faltam && !confirm(`O apto ${r.apto} tem ${r.adultos + r.criancas} pessoas, mas falta o nome de ${faltam} acompanhante(s).\n\nSalvar assim mesmo?`)) {
+    const vazio = [...document.querySelectorAll("#fAcompBox input")].find(i => !i.value.trim()); if (vazio) vazio.focus(); return;
+  }
   const editando = !!editId;
   if (editando) db.reservas = db.reservas.map(x => x.id === editId ? r : x); else db.reservas.push(r);
   const empAnterior = r.emp; limparForm(); $("fEmp").value = empAnterior; $("fApto").focus();
@@ -796,8 +826,8 @@ $("listaRes").onclick = async e => {
   const ed = e.target.dataset.edit, del = e.target.dataset.del;
   if (ed) {
     const r = db.reservas.find(x => x.id === ed); if (!r) return;
-    editId = r.id; $("fEmp").value = r.emp; $("fApto").value = r.apto; $("fReserva").value = r.reserva || ""; $("fHosp").value = r.hospede || ""; $("fAcomp").value = r.acompanhante || "";
-    $("fAd").value = r.adultos; $("fCr").value = r.criancas; $("fIn").value = r.checkin; $("fOut").value = r.checkout;
+    editId = r.id; $("fEmp").value = r.emp; $("fApto").value = r.apto; $("fReserva").value = r.reserva || ""; $("fHosp").value = r.hospede || "";
+    $("fAd").value = r.adultos; $("fCr").value = r.criancas; acompForm = listaAcomp(r.acompanhante); renderAcompForm(); $("fIn").value = r.checkin; $("fOut").value = r.checkout;
     $("fCafe").checked = r.cafe; $("fObs").value = r.obs || "";
     $("formTitulo").textContent = `Editando apto ${r.apto}`; $("btnSalvar").textContent = "Salvar alterações"; $("btnCancelar").style.display = "";
     window.scrollTo({ top: 0, behavior: "smooth" });

@@ -96,7 +96,12 @@ tr.foot td{font-weight:700;border-bottom:0}
 .rev-head{margin:14px 0 8px;align-items:center}
 table.rev td{padding:4px}
 table.rev input,table.rev select{width:100%;padding:5px 6px;font-size:13px}
-table.rev input.falta{border-color:#f0c060;background:#fffaf0}
+table.rev input.falta,.acomp-box input.falta{border-color:#f0c060;background:#fffaf0}
+table.rev input[data-f="acomp"]{margin-bottom:3px}
+.acomp-linha{flex-basis:100%;display:flex;flex-direction:column;gap:4px}
+.acomp-tit{font-size:12px;color:var(--muted)}
+.acomp-box{display:flex;flex-wrap:wrap;gap:8px}
+.acomp-box input{flex:1;min-width:200px;max-width:340px}
 table.rev tr.sem td{background:#f7f2ee}
 table.rev small{color:var(--muted);font-size:11px}
 .overlay{position:fixed;inset:0;background:rgba(42,38,34,.75);display:flex;align-items:center;justify-content:center;z-index:10}
@@ -219,11 +224,12 @@ table.rev small{color:var(--muted);font-size:11px}
       <label style="flex:1;min-width:180px">Hóspede
         <input id="fHosp">
       </label>
-      <label style="flex:1;min-width:200px">Acompanhante(s)
-        <input id="fAcomp" placeholder="nome(s), separados por vírgula">
-      </label>
-      <label>Adultos<input type="number" id="fAd" min="0" value="2" required></label>
-      <label>Crianças<input type="number" id="fCr" min="0" value="0" required></label>
+      <label>Adultos<input type="number" id="fAd" min="0" max="30" value="2" required></label>
+      <label>Crianças<input type="number" id="fCr" min="0" max="30" value="0" required></label>
+      <div class="acomp-linha">
+        <span class="acomp-tit">Acompanhante(s) — um campo por pessoa além do titular</span>
+        <div class="acomp-box" id="fAcompBox"></div>
+      </div>
       <label>Check-in<input type="date" id="fIn" required></label>
       <label>Check-out<input type="date" id="fOut" required></label>
       <label class="chk"><input type="checkbox" id="fCafe" checked> Café incluso</label>
