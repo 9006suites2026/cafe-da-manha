@@ -3,7 +3,9 @@
 Relação diária do café da manhã para o restaurante, separada por empreendimento,
 com sugestão de pedido à padaria de acordo com a ocupação.
 
-**Abrir o sistema:** https://9006suites2026.github.io/cafe-da-manha/
+**Abrir o sistema:** https://cafe-da-manha-iota.vercel.app/ (Vercel)
+— cópia também em https://9006suites2026.github.io/cafe-da-manha/ (GitHub Pages).
+Cada envio para a branch `main` atualiza os dois sozinhos.
 
 ## Como funciona
 
