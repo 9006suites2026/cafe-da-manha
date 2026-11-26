@@ -1,6 +1,31 @@
+# Configurações locais do editor / Claude
 .claude/
-*.json.bak
-backup-cafe-*.json
+.vscode/
+.idea/
+
+# Segredos e variáveis de ambiente — NUNCA versionar
 .env
 .env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials*.json
+service-account*.json
+
+# Ferramentas de deploy (guardam IDs do projeto e tokens locais)
+.vercel/
+supabase/.temp/
+supabase/.branches/
+
+# Dados de hóspedes (backups e PDFs do sistema do hotel)
+backup-cafe-*.json
+*.json.bak
 *.pdf
+*.csv
+*.xlsx
+
+# Dependências / lixo
+node_modules/
+.DS_Store
+Thumbs.db

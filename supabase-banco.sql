@@ -79,3 +79,36 @@ begin
   begin alter publication supabase_realtime add table public.extras;   exception when duplicate_object then null; end;
   begin alter publication supabase_realtime add table public.config;   exception when duplicate_object then null; end;
 end $$;
+
+-- =====================================================================
+--  ENDURECIMENTO DE SEGURANÇA (26/11/2026) — pode rodar mais de uma vez
+-- =====================================================================
+-- 1) Só usuários de verdade (criados no painel). Login anônimo, mesmo se for ligado
+--    por engano no futuro, não acessa nada.
+drop policy if exists "equipe acessa reservas" on public.reservas;
+drop policy if exists "equipe acessa extras"   on public.extras;
+drop policy if exists "equipe acessa config"   on public.config;
+create policy "equipe acessa reservas" on public.reservas for all to authenticated
+  using ((select coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false)) = false)
+  with check ((select coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false)) = false);
+create policy "equipe acessa extras" on public.extras for all to authenticated
+  using ((select coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false)) = false)
+  with check ((select coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false)) = false);
+create policy "equipe acessa config" on public.config for all to authenticated
+  using ((select coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false)) = false)
+  with check ((select coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false)) = false);
+
+-- 2) Limites de tamanho e valores (ninguém enche o banco com lixo nem números absurdos)
+alter table public.reservas drop constraint if exists reservas_limites;
+alter table public.reservas add constraint reservas_limites check (
+  char_length(id) <= 120 and char_length(apto) between 1 and 20 and char_length(reserva) <= 30
+  and char_length(hospede) <= 200 and char_length(acompanhante) <= 600 and char_length(obs) <= 600
+  and adultos <= 30 and criancas <= 30
+  and checkin >= date '2024-01-01' and checkout <= date '2030-12-31'
+  and checkout - checkin <= 400);
+alter table public.extras drop constraint if exists extras_limites;
+alter table public.extras add constraint extras_limites check (adultos <= 500 and criancas <= 500);
+alter table public.config drop constraint if exists config_limites;
+alter table public.config add constraint config_limites check (
+  jsonb_typeof(itens) = 'array' and jsonb_array_length(itens) <= 60
+  and pg_column_size(itens) <= 20000 and margem between 0 and 100);

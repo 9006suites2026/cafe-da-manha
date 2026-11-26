@@ -1,0 +1,6 @@
+Bibliotecas de terceiros, copiadas do registro oficial do npm (integridade sha512 conferida em 26/11/2026).
+
+- @supabase/supabase-js 2.119.2 (MIT) -> supabase-js-2.119.2.min.js (dist/umd/supabase.js)
+- pdfjs-dist 4.10.38 (Apache-2.0) -> pdf-4.10.38.min.mjs e pdf.worker-4.10.38.min.mjs
+
+Para atualizar: baixe a nova versão do npm, confira o hash e troque os arquivos e as referências em index.html.
