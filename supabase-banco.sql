@@ -11,7 +11,8 @@ create table if not exists public.reservas (
   emp         text not null check (emp in ('9006', 'madero')),
   apto        text not null,
   hospede     text not null default '',
-  adultos     integer not null default 0 check (adultos >= 0),
+  acompanhante text not null default '',
+  adultos    integer not null default 0 check (adultos >= 0),
   criancas    integer not null default 0 check (criancas >= 0),
   checkin     date not null,
   checkout    date not null,
@@ -21,6 +22,8 @@ create table if not exists public.reservas (
   constraint checkout_depois_checkin check (checkout > checkin)
 );
 create index if not exists reservas_checkout_idx on public.reservas (checkout);
+-- (atualização 26/11/2026) nome do(s) acompanhante(s) no relatório
+alter table public.reservas add column if not exists acompanhante text not null default '';
 
 -- ---------- Extras do dia (day use, café avulso, convidados) ----------
 create table if not exists public.extras (

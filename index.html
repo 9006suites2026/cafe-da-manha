@@ -77,15 +77,37 @@ tr.foot td{font-weight:700;border-bottom:0}
 .overlay .erro{color:var(--danger);font-size:13px;margin:0;min-height:1em}
 .printonly{display:none}
 @media (max-width:760px){.stats,.grid2{grid-template-columns:1fr}.week{grid-template-columns:repeat(4,1fr)}}
+/* ---------- relatório impresso (A4) ---------- */
+#relatorio{display:none}
 @media print{
-  body{background:#fff;font-size:13px}
-  header,.noprint,.week,.extras,.overlay{display:none!important}
+  @page{size:A4 portrait;margin:12mm}
+  body{background:#fff;color:#000;font-size:11px}
+  header,main>section,.overlay,.toast{display:none!important}
   main{padding:0;max-width:none}
-  section.tab{display:none!important}
-  section#tab-relacao{display:block!important}
-  .card,.stat{border:1px solid #bbb;break-inside:avoid}
-  .printonly{display:block}
+  #relatorio{display:block}
 }
+#relatorio{font-family:Arial,Helvetica,sans-serif;color:#000}
+.r-head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:10px}
+.r-tit{font-size:18px;font-weight:800;letter-spacing:.04em}
+.r-sub{font-size:12px;margin-top:2px}
+.r-data{text-align:right;font-size:12px}
+.r-data b{font-size:20px;display:block}
+#relatorio table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px}
+#relatorio th,#relatorio td{border:1px solid #000;padding:3px 5px;text-align:left;vertical-align:top;color:#000}
+#relatorio th{background:#e6e6e6;font-size:9.5px;text-transform:uppercase;letter-spacing:.03em;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+#relatorio td.num,#relatorio th.num{text-align:center}
+#relatorio tr.total td{font-weight:800;background:#f0f0f0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+#relatorio tr.sem td{background:#f4f4f4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+#relatorio .cafe-sim,#relatorio .cafe-nao{white-space:nowrap}
+#relatorio .cafe-sim{font-weight:700}
+#relatorio .cafe-nao{font-weight:800;text-decoration:underline}
+#relatorio .falta{font-style:italic;color:#555}
+#relatorio h3{font-size:13px;margin:14px 0 4px;text-transform:uppercase;border-left:5px solid #000;padding-left:6px}
+#relatorio .chk{width:24px}
+#relatorio .r-obs{font-size:10.5px;margin:2px 0 8px}
+.r-assin{display:flex;gap:30px;margin-top:28px;break-inside:avoid}
+.r-assin div{flex:1;border-top:1px solid #000;padding-top:3px;font-size:10px;text-align:center}
+.r-rodape{margin-top:8px;font-size:9px;color:#333}
 </style>
 <!-- Biblioteca do Supabase (só é usada quando o banco está configurado) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -113,6 +135,7 @@ tr.foot td{font-weight:700;border-bottom:0}
       <button class="btn sec noprint" id="btnAmanha">Amanhã</button>
       <button class="btn sec noprint" id="btnNext">▶</button>
       <input type="date" id="dia" class="noprint">
+      <button class="btn noprint" id="btnImprimirRel">🖨 Imprimir relação</button>
     </div>
     <div class="week" id="semana"></div>
     <p class="hint noprint">O café conta a partir da manhã seguinte ao check-in até a manhã do check-out. Toque num dia para ver a relação.</p>
@@ -127,7 +150,8 @@ tr.foot td{font-weight:700;border-bottom:0}
       <h2 style="margin:0">🥐 Sugestão de pedido à padaria</h2>
       <div class="row noprint">
         <button class="btn sec" id="btnCopiar">Copiar p/ WhatsApp</button>
-        <button class="btn" id="btnImprimir">Imprimir</button>
+        <label class="chk" style="padding:0"><input type="checkbox" id="chkPedidoPrint"> incluir pedido na impressão</label>
+        <button class="btn" id="btnImprimir">🖨 Imprimir relação</button>
       </div>
     </div>
     <table style="margin-top:10px"><thead><tr><th>Item</th><th class="num">Quantidade</th></tr></thead><tbody id="pedido"></tbody></table>
@@ -150,6 +174,9 @@ tr.foot td{font-weight:700;border-bottom:0}
       <label style="flex:1;min-width:180px">Hóspede
         <input id="fHosp">
       </label>
+      <label style="flex:1;min-width:200px">Acompanhante(s)
+        <input id="fAcomp" placeholder="nome(s), separados por vírgula">
+      </label>
       <label>Adultos<input type="number" id="fAd" min="0" value="2" required></label>
       <label>Crianças<input type="number" id="fCr" min="0" value="0" required></label>
       <label>Check-in<input type="date" id="fIn" required></label>
@@ -170,7 +197,7 @@ tr.foot td{font-weight:700;border-bottom:0}
     </div>
     <div style="overflow-x:auto">
     <table>
-      <thead><tr><th>Emp.</th><th>Apto</th><th>Hóspede</th><th class="num">Ad.</th><th class="num">Cr.</th><th>Check-in</th><th>Check-out</th><th>Café</th><th>Obs.</th><th></th></tr></thead>
+      <thead><tr><th>Emp.</th><th>Apto</th><th>Hóspede</th><th>Acompanhante(s)</th><th class="num">Ad.</th><th class="num">Cr.</th><th>Check-in</th><th>Check-out</th><th>Café</th><th>Obs.</th><th></th></tr></thead>
       <tbody id="listaRes"></tbody>
     </table>
     </div>
@@ -179,8 +206,9 @@ tr.foot td{font-weight:700;border-bottom:0}
   <div class="card">
     <h2>Colar várias reservas (do Excel / sistema do hotel)</h2>
     <p class="hint" style="margin-top:0">Uma reserva por linha, colunas separadas por TAB (copiado do Excel) ou ponto e vírgula, nesta ordem:<br>
-    <b>Empreendimento ; Apto ; Hóspede ; Adultos ; Crianças ; Check-in ; Check-out</b> — datas em dd/mm/aaaa. Empreendimento: "9006" ou "Madero".</p>
-    <textarea id="txtImport" placeholder="9006;101;João Silva;2;1;25/11/2026;28/11/2026&#10;Madero;204;Maria Souza;1;0;26/11/2026;27/11/2026"></textarea>
+    <b>Empreendimento ; Apto ; Hóspede ; Adultos ; Crianças ; Check-in ; Check-out ; Acompanhante(s) ; Café</b><br>
+    Datas em dd/mm/aaaa. Empreendimento: "9006" ou "Madero". As duas últimas colunas são opcionais: Café = "S" (com café, padrão) ou "N" (sem café).</p>
+    <textarea id="txtImport" placeholder="9006;101;João Silva;2;1;25/11/2026;28/11/2026;Ana Silva;S&#10;Madero;204;Maria Souza;1;0;26/11/2026;27/11/2026;;N"></textarea>
     <div class="row" style="margin-top:8px"><button class="btn" id="btnImport">Importar linhas</button></div>
   </div>
 </section>
@@ -211,6 +239,9 @@ tr.foot td{font-weight:700;border-bottom:0}
     </div>
   </div>
 </section>
+
+<!-- Relatório padronizado: só aparece na impressão -->
+<div id="relatorio"></div>
 </main>
 
 <!-- ============ LOGIN ============ -->
@@ -294,7 +325,7 @@ function setStatus(tipo, txt) { const s = $("status"); s.className = "status " +
 
 // ---------- camada de gravação (local ou Supabase) ----------
 const okOuErro = r => { if (r && r.error) throw r.error; return r && r.data; };
-const linhaReserva = r => ({ id: r.id, emp: r.emp, apto: String(r.apto), hospede: r.hospede || "", adultos: +r.adultos || 0, criancas: +r.criancas || 0, checkin: r.checkin, checkout: r.checkout, cafe: !!r.cafe, obs: r.obs || "" });
+const linhaReserva = r => ({ id: r.id, emp: r.emp, apto: String(r.apto), hospede: r.hospede || "", acompanhante: r.acompanhante || "", adultos: +r.adultos || 0, criancas: +r.criancas || 0, checkin: r.checkin, checkout: r.checkout, cafe: !!r.cafe, obs: r.obs || "" });
 const linhasExtras = avulsos => Object.entries(avulsos || {}).flatMap(([dia, emps]) => Object.entries(emps || {}).filter(([emp]) => EMP[emp]).map(([emp, v]) => ({ dia, emp, adultos: +v.a || 0, criancas: +v.c || 0 })));
 
 // Grava: no modo local salva no navegador; no online executa fn (chamadas ao Supabase).
@@ -336,7 +367,7 @@ const Store = {
 async function carregar() {
   const lim = addDays(hoje(), -DIAS_HISTORICO);
   const [r, e, c] = await Promise.all([
-    sb.from("reservas").select("id,emp,apto,hospede,adultos,criancas,checkin,checkout,cafe,obs").gte("checkout", lim).order("checkin").limit(5000),
+    sb.from("reservas").select("id,emp,apto,hospede,acompanhante,adultos,criancas,checkin,checkout,cafe,obs").gte("checkout", lim).order("checkin").limit(5000),
     sb.from("extras").select("dia,emp,adultos,criancas").gte("dia", lim),
     sb.from("config").select("itens,margem").eq("id", 1).maybeSingle()
   ]);
@@ -359,14 +390,17 @@ function agendarRecarga() {
 
 // ---------- regra do café ----------
 // Toma café na manhã do dia D quem dormiu a noite anterior: check-in < D <= check-out
-const tomaCafe = (r, dia) => r.cafe && r.checkin < dia && dia <= r.checkout;
+// A relação lista TODOS os hospedados da noite anterior; só os "com café" entram na contagem.
+const hospedado = (r, dia) => r.checkin < dia && dia <= r.checkout;
 
 function resumo(dia) {
   const emp = {};
-  for (const k in EMP) emp[k] = { adultos: 0, criancas: 0, aptos: [], exA: 0, exC: 0 };
+  for (const k in EMP) emp[k] = { adultos: 0, criancas: 0, aptos: [], aptosCafe: 0, semCafe: 0, exA: 0, exC: 0 };
   for (const r of db.reservas) {
-    if (emp[r.emp] && tomaCafe(r, dia)) {
-      const o = emp[r.emp]; o.adultos += +r.adultos || 0; o.criancas += +r.criancas || 0; o.aptos.push(r);
+    if (emp[r.emp] && hospedado(r, dia)) {
+      const o = emp[r.emp]; o.aptos.push(r);
+      if (r.cafe) { o.adultos += +r.adultos || 0; o.criancas += +r.criancas || 0; o.aptosCafe++; }
+      else o.semCafe++;
     }
   }
   const av = db.avulsos[dia] || {};
@@ -413,7 +447,7 @@ function renderRelacao() {
   for (const k in EMP) {
     const o = res.emp[k];
     s += `<div class="stat e${k}"><div class="lbl">${EMP[k]}</div><div class="n">${o.tot}</div>
-      <div class="t">${pessoas(o.totA, o.totC)} · ${pl(o.aptos.length, "apto")}${o.exA + o.exC ? ` · +${o.exA + o.exC} extra` : ""}</div></div>`;
+      <div class="t">${pessoas(o.totA, o.totC)} · ${pl(o.aptosCafe, "apto")} com café${o.semCafe ? ` · ${o.semCafe} sem café` : ""}${o.exA + o.exC ? ` · +${o.exA + o.exC} extra` : ""}</div></div>`;
   }
   s += `<div class="stat"><div class="lbl">Total do café</div><div class="n">${res.T}</div><div class="t">${pessoas(res.A, res.C)}</div></div>`;
   $("stats").innerHTML = s;
@@ -424,11 +458,12 @@ function renderRelacao() {
     let l = "";
     for (const k in EMP) {
       const o = res.emp[k];
-      let rows = o.aptos.map(r => `<tr><td><b>${esc(r.apto)}</b></td><td>${esc(r.hospede)}${r.obs ? `<br><small style="color:var(--muted)">${esc(r.obs)}</small>` : ""}</td>
+      let rows = o.aptos.map(r => `<tr${r.cafe ? "" : ' style="opacity:.75"'}><td><b>${esc(r.apto)}</b></td>
+        <td>${esc(r.hospede)}${r.acompanhante ? `<br><small>+ ${esc(r.acompanhante)}</small>` : ""}${r.obs ? `<br><small style="color:var(--muted)">${esc(r.obs)}</small>` : ""}</td>
         <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
-        <td>${r.checkout === diaSel ? '<span class="tag out">sai hoje</span>' : "até " + brCurto(r.checkout)}</td></tr>`).join("");
-      if (!rows) rows = `<tr><td colspan="5" class="empty">Nenhum apartamento com café neste dia.</td></tr>`;
-      else rows += `<tr class="foot"><td colspan="2">Total ${pl(o.aptos.length, "apto")}</td><td class="num">${o.adultos}</td><td class="num">${o.criancas}</td><td></td></tr>`;
+        <td>${r.cafe ? "" : '<span class="tag no">sem café</span> '}${r.checkout === diaSel ? '<span class="tag out">sai hoje</span>' : "até " + brCurto(r.checkout)}</td></tr>`).join("");
+      if (!rows) rows = `<tr><td colspan="5" class="empty">Nenhum apartamento hospedado neste dia.</td></tr>`;
+      else rows += `<tr class="foot"><td colspan="2">Com café: ${pl(o.aptosCafe, "apto")}${o.semCafe ? ` · sem café: ${o.semCafe}` : ""}</td><td class="num">${o.adultos}</td><td class="num">${o.criancas}</td><td></td></tr>`;
       l += `<div class="card"><h3><span class="tag e${k}">${EMP[k]}</span></h3>
         <table><thead><tr><th>Apto</th><th>Hóspede</th><th class="num">Ad.</th><th class="num">Cr.</th><th>Saída</th></tr></thead><tbody>${rows}</tbody></table>
         <div class="extras"><span>Extras do dia (day use, café avulso pago, convidados…)</span>
@@ -454,7 +489,7 @@ function textoWhatsApp() {
   let t = `☕ *Café da manhã – ${dataLonga(diaSel)}*\n\n`;
   for (const k in EMP) {
     const o = res.emp[k];
-    t += `*${EMP[k]}:* ${pl(o.tot, "pessoa")} (${pessoas(o.totA, o.totC)}) – ${pl(o.aptos.length, "apto")}\n`;
+    t += `*${EMP[k]}:* ${pl(o.tot, "pessoa")} (${pessoas(o.totA, o.totC)}) – ${pl(o.aptosCafe, "apto")}${o.semCafe ? ` (+${o.semCafe} sem café)` : ""}\n`;
   }
   t += `\n*TOTAL: ${pl(res.T, "pessoa")}* (${pessoas(res.A, res.C)})\n`;
   const p = pedido(res);
@@ -462,23 +497,88 @@ function textoWhatsApp() {
   return t;
 }
 
+// ---------- relatório impresso padronizado ----------
+let usuarioEmail = "";
+function renderRelatorio() {
+  const dia = diaSel, res = resumo(dia);
+  const semana = toDate(dia).toLocaleDateString("pt-BR", { weekday: "long" });
+  const soma = f => Object.keys(EMP).reduce((s, k) => s + f(res.emp[k]), 0);
+
+  let h = `<div class="r-head">
+    <div><div class="r-tit">RELAÇÃO DO CAFÉ DA MANHÃ</div><div class="r-sub">9006 Suites · Reserva Madero</div></div>
+    <div class="r-data">${semana}<b>${br(dia)}</b></div></div>`;
+
+  // quadro-resumo
+  h += `<table><thead><tr><th>Empreendimento</th><th class="num">Aptos com café</th><th class="num">Aptos sem café</th>
+    <th class="num">Adultos</th><th class="num">Crianças</th><th class="num">Extras</th><th class="num">Total no café</th></tr></thead><tbody>`;
+  for (const k in EMP) {
+    const o = res.emp[k];
+    h += `<tr><td>${EMP[k]}</td><td class="num">${o.aptosCafe}</td><td class="num">${o.semCafe}</td><td class="num">${o.adultos}</td>
+      <td class="num">${o.criancas}</td><td class="num">${o.exA + o.exC}</td><td class="num"><b>${o.tot}</b></td></tr>`;
+  }
+  h += `<tr class="total"><td>TOTAL</td><td class="num">${soma(o => o.aptosCafe)}</td><td class="num">${soma(o => o.semCafe)}</td>
+    <td class="num">${soma(o => o.adultos)}</td><td class="num">${soma(o => o.criancas)}</td><td class="num">${soma(o => o.exA + o.exC)}</td>
+    <td class="num">${res.T}</td></tr></tbody></table>`;
+
+  // lista por empreendimento
+  for (const k in EMP) {
+    const o = res.emp[k];
+    h += `<h3>${EMP[k]} — ${pl(o.tot, "pessoa")} no café</h3>`;
+    if (!o.aptos.length) { h += `<p class="r-obs">Nenhum apartamento hospedado.</p>`; }
+    else {
+      h += `<table><thead><tr><th style="width:8%">Apto</th><th style="width:21%">Hóspede</th><th style="width:24%">Acompanhante(s)</th>
+        <th class="num" style="width:5%">Ad.</th><th class="num" style="width:5%">Cr.</th><th class="num" style="width:11%">Café</th>
+        <th>Observação</th><th class="num chk">✓</th></tr></thead><tbody>`;
+      for (const r of o.aptos) {
+        const pessoasApto = (+r.adultos || 0) + (+r.criancas || 0);
+        const acomp = r.acompanhante ? esc(r.acompanhante) : (pessoasApto >= 2 ? '<span class="falta">não informado</span>' : "—");
+        const obs = [r.checkout === dia ? "Check-out hoje" : "", esc(r.obs)].filter(Boolean).join(" · ");
+        h += `<tr class="${r.cafe ? "" : "sem"}"><td><b>${esc(r.apto)}</b></td><td>${esc(r.hospede) || "—"}</td><td>${acomp}</td>
+          <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
+          <td class="num ${r.cafe ? "cafe-sim" : "cafe-nao"}">${r.cafe ? "COM CAFÉ" : "SEM CAFÉ"}</td>
+          <td>${obs}</td><td></td></tr>`;
+      }
+      h += `</tbody></table>`;
+    }
+    if (o.exA + o.exC) h += `<p class="r-obs"><b>Extras do dia</b> (day use, café avulso, convidados): ${pessoas(o.exA, o.exC)}</p>`;
+  }
+
+  // pedido à padaria (opcional)
+  if ($("chkPedidoPrint").checked) {
+    const p = pedido(res);
+    h += `<h3>Pedido à padaria — ${pl(res.T, "pessoa")}</h3>`;
+    h += res.T && p.length
+      ? `<table><thead><tr><th>Item</th><th class="num" style="width:25%">Quantidade</th></tr></thead><tbody>` +
+        p.map(i => `<tr><td>${esc(i.nome)}</td><td class="num">${esc(fmtQ(i.q, i.un))}</td></tr>`).join("") +
+        `</tbody></table><p class="r-obs">Quantidades com ${+db.margem || 0}% de margem de segurança.</p>`
+      : `<p class="r-obs">Sem pessoas previstas.</p>`;
+  }
+
+  h += `<div class="r-assin"><div>Recepção (nome / assinatura)</div><div>Restaurante (nome / assinatura)</div></div>
+    <div class="r-rodape">Gerado em ${new Date().toLocaleString("pt-BR")}${usuarioEmail ? " por " + esc(usuarioEmail) : ""}.
+    O café conta da manhã seguinte ao check-in até a manhã do check-out. Hóspedes "SEM CAFÉ" aparecem só para conferência e não entram no total.</div>`;
+  $("relatorio").innerHTML = h;
+}
+function imprimirRelacao() { renderRelatorio(); window.print(); }
+window.addEventListener("beforeprint", renderRelatorio); // também funciona com Ctrl+P
+
 // ---------- render: reservas ----------
 function renderReservas() {
   const q = $("busca").value.trim().toLowerCase(), fe = $("filtroEmp").value, per = $("filtroPer").value, h = hoje();
   const lista = db.reservas
     .filter(r => (!fe || r.emp === fe) && (per === "todas" || r.checkout >= h) &&
-      (!q || String(r.apto).toLowerCase().includes(q) || String(r.hospede || "").toLowerCase().includes(q)))
+      (!q || String(r.apto).toLowerCase().includes(q) || String(r.hospede || "").toLowerCase().includes(q) || String(r.acompanhante || "").toLowerCase().includes(q)))
     .sort((a, b) => a.checkin.localeCompare(b.checkin) || a.emp.localeCompare(b.emp) || String(a.apto).localeCompare(String(b.apto), "pt-BR", { numeric: true }));
   $("listaRes").innerHTML = lista.length ? lista.map(r => `<tr>
       <td><span class="tag e${r.emp}">${r.emp === "9006" ? "9006" : "Madero"}</span></td>
-      <td><b>${esc(r.apto)}</b></td><td>${esc(r.hospede)}</td>
+      <td><b>${esc(r.apto)}</b></td><td>${esc(r.hospede)}</td><td>${esc(r.acompanhante)}</td>
       <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
       <td>${br(r.checkin)}</td><td>${br(r.checkout)}</td>
       <td>${r.cafe ? "✔" : '<span class="tag no">sem café</span>'}</td>
       <td><small>${esc(r.obs)}</small></td>
       <td style="white-space:nowrap"><button class="btn sec small" data-edit="${esc(r.id)}">Editar</button>
         <button class="btn danger small" data-del="${esc(r.id)}">✕</button></td></tr>`).join("")
-    : `<tr><td colspan="10" class="empty">Nenhuma reserva encontrada.</td></tr>`;
+    : `<tr><td colspan="11" class="empty">Nenhuma reserva encontrada.</td></tr>`;
 }
 
 // ---------- render: config ----------
@@ -521,7 +621,10 @@ $("listas").addEventListener("change", e => {
   ((db.avulsos[dia] ||= {})[emp] ||= {})[el.dataset.t] = Math.max(0, parseInt(el.value) || 0);
   el.blur(); renderRelacao(); Store.salvarExtra(dia, emp);
 });
-$("btnImprimir").onclick = () => window.print();
+$("btnImprimir").onclick = imprimirRelacao;
+$("btnImprimirRel").onclick = imprimirRelacao;
+$("chkPedidoPrint").checked = localStorage.getItem("cafe-print-pedido") === "1";
+$("chkPedidoPrint").onchange = e => localStorage.setItem("cafe-print-pedido", e.target.checked ? "1" : "0");
 $("btnCopiar").onclick = async () => {
   const t = textoWhatsApp();
   try { await navigator.clipboard.writeText(t); }
@@ -541,11 +644,13 @@ $("fIn").onchange = () => { if ($("fIn").value && (!$("fOut").value || $("fOut")
 $("formRes").onsubmit = async e => {
   e.preventDefault();
   const r = {
-    id: editId || uid(), emp: $("fEmp").value, apto: $("fApto").value.trim(), hospede: $("fHosp").value.trim(),
+    id: editId || uid(), emp: $("fEmp").value, apto: $("fApto").value.trim(), hospede: $("fHosp").value.trim(), acompanhante: $("fAcomp").value.trim(),
     adultos: Math.max(0, parseInt($("fAd").value) || 0), criancas: Math.max(0, parseInt($("fCr").value) || 0),
     checkin: $("fIn").value, checkout: $("fOut").value, cafe: $("fCafe").checked, obs: $("fObs").value.trim()
   };
   if (r.checkout <= r.checkin) { toast("O check-out precisa ser depois do check-in."); return; }
+  if (r.adultos + r.criancas >= 2 && !r.acompanhante &&
+      !confirm(`O apto ${r.apto} tem ${r.adultos + r.criancas} pessoas, mas o nome do acompanhante está vazio.\n\nSalvar assim mesmo?`)) { $("fAcomp").focus(); return; }
   const editando = !!editId;
   if (editando) db.reservas = db.reservas.map(x => x.id === editId ? r : x); else db.reservas.push(r);
   const empAnterior = r.emp; limparForm(); $("fEmp").value = empAnterior; $("fApto").focus();
@@ -557,7 +662,7 @@ $("listaRes").onclick = async e => {
   const ed = e.target.dataset.edit, del = e.target.dataset.del;
   if (ed) {
     const r = db.reservas.find(x => x.id === ed); if (!r) return;
-    editId = r.id; $("fEmp").value = r.emp; $("fApto").value = r.apto; $("fHosp").value = r.hospede || "";
+    editId = r.id; $("fEmp").value = r.emp; $("fApto").value = r.apto; $("fHosp").value = r.hospede || ""; $("fAcomp").value = r.acompanhante || "";
     $("fAd").value = r.adultos; $("fCr").value = r.criancas; $("fIn").value = r.checkin; $("fOut").value = r.checkout;
     $("fCafe").checked = r.cafe; $("fObs").value = r.obs || "";
     $("formTitulo").textContent = `Editando apto ${r.apto}`; $("btnSalvar").textContent = "Salvar alterações"; $("btnCancelar").style.display = "";
@@ -583,7 +688,9 @@ $("btnImport").onclick = async () => {
     const emp = empTxt.includes("9006") ? "9006" : empTxt.includes("madero") ? "madero" : null;
     const ci = parseData(c[5]), co = parseData(c[6]);
     if (!emp || !c[1] || !ci || !co || co <= ci) { erros.push(n + 1); return; }
-    novas.push({ id: uid(), emp, apto: c[1], hospede: c[2] || "", adultos: Math.max(0, parseInt(c[3]) || 0), criancas: Math.max(0, parseInt(c[4]) || 0), checkin: ci, checkout: co, cafe: true, obs: "" });
+    const cafeTxt = (c[8] || "").trim().toLowerCase();
+    const cafe = !(cafeTxt === "n" || cafeTxt === "nao" || cafeTxt === "não" || cafeTxt === "sem" || cafeTxt === "sem café" || cafeTxt === "0");
+    novas.push({ id: uid(), emp, apto: c[1], hospede: c[2] || "", acompanhante: c[7] || "", adultos: Math.max(0, parseInt(c[3]) || 0), criancas: Math.max(0, parseInt(c[4]) || 0), checkin: ci, checkout: co, cafe, obs: "" });
   });
   if (!novas.length) { toast("Nenhuma linha válida." + (erros.length ? ` Linhas com problema: ${erros.slice(0, 8).join(", ")}` : ""), 4000); return; }
   db.reservas.push(...novas); renderTudo();
@@ -693,6 +800,7 @@ async function iniciar() {
   }
   sb.auth.onAuthStateChange((evento, sessao) => {
     // adia para fora do callback (recomendação do Supabase)
+    usuarioEmail = (sessao && sessao.user && sessao.user.email) || "";
     setTimeout(() => {
       if (sessao && !sessaoAtiva) iniciarSessao();
       else if (!sessao && sessaoAtiva) encerrarSessao();
