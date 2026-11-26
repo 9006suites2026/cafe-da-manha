@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Café da Manhã – Relação Diária</title>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--ink:#2a2622;--muted:#6f675e;--line:#e4ded4;--accent:#8a5a2b;--a9006:#2f6f8f;--amad:#5f8a2e;--danger:#b03a2e;--soft:#faf7f2}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.4}
+header{background:var(--ink);color:#fff;padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{font-size:18px;margin:0;font-weight:600}
+header h1 span{opacity:.6;font-weight:400}
+.status{font-size:12px;padding:3px 10px;border-radius:999px;background:#ffffff1a;color:#d9d2c7}
+.status::before{content:"● ";color:#bbb}
+.status.ok::before{color:#7ed37e}
+.status.err::before{color:#ff8a7a}
+.status.wait::before{color:#f0c060}
+nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+nav button,.linkbtn{background:transparent;border:0;color:#d9d2c7;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:14px}
+nav button:hover,.linkbtn:hover{color:#fff}
+nav button.active{background:#ffffff22;color:#fff}
+main{max-width:1100px;margin:0 auto;padding:20px}
+section.tab{display:none}
+section.tab.active{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+h2{font-size:16px;margin:0 0 12px}
+h3{font-size:14px;margin:0 0 8px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+label.chk{flex-direction:row;align-items:center;gap:6px;font-size:14px;color:var(--ink);padding-bottom:8px}
+input,select,textarea{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
+input[type=number]{width:80px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+textarea{width:100%;min-height:110px;font-family:Consolas,monospace;font-size:13px}
+.btn{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;white-space:nowrap}
+.btn:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.6;cursor:wait}
+.btn.sec{background:#fff;color:var(--accent)}
+.btn.small{padding:3px 9px;font-size:13px}
+.btn.danger{border-color:var(--danger);background:#fff;color:var(--danger)}
+.hint{font-size:13px;color:var(--muted);margin:8px 0 0}
+.datebar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.datebar .big{font-size:20px;font-weight:600;margin-right:auto}
+.datebar .big::first-letter{text-transform:uppercase}
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:14px}
+.day{border:1px solid var(--line);border-radius:8px;padding:6px 4px;text-align:center;cursor:pointer;background:var(--soft);font-size:12px;color:var(--muted)}
+.day b{display:block;font-size:20px;color:var(--ink);font-variant-numeric:tabular-nums}
+.day.sel{outline:2px solid var(--accent);background:#fff}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+.stat{border-radius:10px;padding:14px 16px;border:1px solid var(--line);background:#fff;border-top:5px solid var(--accent)}
+.stat.e9006{border-top-color:var(--a9006)}
+.stat.emadero{border-top-color:var(--amad)}
+.stat .lbl{font-size:13px;font-weight:600}
+.stat .n{font-size:38px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat .t{font-size:13px;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.foot td{font-weight:700;border-bottom:0}
+.tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;color:#fff;white-space:nowrap}
+.tag.e9006{background:var(--a9006)}
+.tag.emadero{background:var(--amad)}
+.tag.out{background:#e9e2d6;color:var(--ink)}
+.tag.no{background:#f3d9d5;color:var(--danger)}
+.empty{color:var(--muted);font-style:italic;padding:10px 0}
+.extras{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+.extras span{font-size:13px;color:var(--muted);flex-basis:100%}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20;max-width:90vw}
+.toast.show{opacity:1}
+.itens input[type=text]{width:100%}
+.overlay{position:fixed;inset:0;background:rgba(42,38,34,.75);display:flex;align-items:center;justify-content:center;z-index:10}
+.overlay[hidden]{display:none}
+.overlay form{width:min(380px,92vw);display:flex;flex-direction:column;gap:12px;margin:0}
+.overlay .erro{color:var(--danger);font-size:13px;margin:0;min-height:1em}
+.printonly{display:none}
+@media (max-width:760px){.stats,.grid2{grid-template-columns:1fr}.week{grid-template-columns:repeat(4,1fr)}}
+@media print{
+  body{background:#fff;font-size:13px}
+  header,.noprint,.week,.extras,.overlay{display:none!important}
+  main{padding:0;max-width:none}
+  section.tab{display:none!important}
+  section#tab-relacao{display:block!important}
+  .card,.stat{border:1px solid #bbb;break-inside:avoid}
+  .printonly{display:block}
+}
+</style>
+<!-- Biblioteca do Supabase (só é usada quando o banco está configurado) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<header>
+  <h1>☕ Café da Manhã <span>· 9006 Suites & Reserva Madero</span></h1>
+  <span class="status" id="status">modo local</span>
+  <nav>
+    <button data-tab="relacao" class="active">Relação do dia</button>
+    <button data-tab="reservas">Reservas</button>
+    <button data-tab="config">Pedido padaria & backup</button>
+    <button class="linkbtn" id="btnSair" hidden>Sair</button>
+  </nav>
+</header>
+
+<main>
+<!-- ============ RELAÇÃO DO DIA ============ -->
+<section class="tab active" id="tab-relacao">
+  <div class="card">
+    <div class="datebar">
+      <div class="big" id="diaTitulo"></div>
+      <button class="btn sec noprint" id="btnPrev">◀</button>
+      <button class="btn sec noprint" id="btnHoje">Hoje</button>
+      <button class="btn sec noprint" id="btnAmanha">Amanhã</button>
+      <button class="btn sec noprint" id="btnNext">▶</button>
+      <input type="date" id="dia" class="noprint">
+    </div>
+    <div class="week" id="semana"></div>
+    <p class="hint noprint">O café conta a partir da manhã seguinte ao check-in até a manhã do check-out. Toque num dia para ver a relação.</p>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="grid2" id="listas"></div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <h2 style="margin:0">🥐 Sugestão de pedido à padaria</h2>
+      <div class="row noprint">
+        <button class="btn sec" id="btnCopiar">Copiar p/ WhatsApp</button>
+        <button class="btn" id="btnImprimir">Imprimir</button>
+      </div>
+    </div>
+    <table style="margin-top:10px"><thead><tr><th>Item</th><th class="num">Quantidade</th></tr></thead><tbody id="pedido"></tbody></table>
+    <p class="hint" id="pedidoHint"></p>
+  </div>
+  <p class="printonly hint" id="printFoot"></p>
+</section>
+
+<!-- ============ RESERVAS ============ -->
+<section class="tab" id="tab-reservas">
+  <div class="card">
+    <h2 id="formTitulo">Nova reserva</h2>
+    <form id="formRes" class="row" autocomplete="off">
+      <label>Empreendimento
+        <select id="fEmp" required></select>
+      </label>
+      <label>Apto
+        <input id="fApto" required style="width:90px">
+      </label>
+      <label style="flex:1;min-width:180px">Hóspede
+        <input id="fHosp">
+      </label>
+      <label>Adultos<input type="number" id="fAd" min="0" value="2" required></label>
+      <label>Crianças<input type="number" id="fCr" min="0" value="0" required></label>
+      <label>Check-in<input type="date" id="fIn" required></label>
+      <label>Check-out<input type="date" id="fOut" required></label>
+      <label class="chk"><input type="checkbox" id="fCafe" checked> Café incluso</label>
+      <label style="flex:1;min-width:160px">Obs.<input id="fObs" placeholder="ex.: sem glúten, berço…"></label>
+      <button class="btn" type="submit" id="btnSalvar">Adicionar</button>
+      <button class="btn sec" type="button" id="btnCancelar" style="display:none">Cancelar</button>
+    </form>
+    <p class="hint">Reservas novas (a partir de 24/11) já vêm com café incluso. Desmarque só para reservas antigas que não têm café.</p>
+  </div>
+
+  <div class="card">
+    <div class="row" style="margin-bottom:10px">
+      <label style="flex:1;min-width:180px">Buscar<input id="busca" placeholder="apto ou nome"></label>
+      <label>Empreendimento<select id="filtroEmp"><option value="">Todos</option></select></label>
+      <label>Mostrar<select id="filtroPer"><option value="ativas">Hospedados e futuras</option><option value="todas">Todas</option></select></label>
+    </div>
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Emp.</th><th>Apto</th><th>Hóspede</th><th class="num">Ad.</th><th class="num">Cr.</th><th>Check-in</th><th>Check-out</th><th>Café</th><th>Obs.</th><th></th></tr></thead>
+      <tbody id="listaRes"></tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Colar várias reservas (do Excel / sistema do hotel)</h2>
+    <p class="hint" style="margin-top:0">Uma reserva por linha, colunas separadas por TAB (copiado do Excel) ou ponto e vírgula, nesta ordem:<br>
+    <b>Empreendimento ; Apto ; Hóspede ; Adultos ; Crianças ; Check-in ; Check-out</b> — datas em dd/mm/aaaa. Empreendimento: "9006" ou "Madero".</p>
+    <textarea id="txtImport" placeholder="9006;101;João Silva;2;1;25/11/2026;28/11/2026&#10;Madero;204;Maria Souza;1;0;26/11/2026;27/11/2026"></textarea>
+    <div class="row" style="margin-top:8px"><button class="btn" id="btnImport">Importar linhas</button></div>
+  </div>
+</section>
+
+<!-- ============ CONFIG ============ -->
+<section class="tab" id="tab-config">
+  <div class="card">
+    <h2>Itens do pedido à padaria (quantidade por pessoa)</h2>
+    <p class="hint" style="margin-top:0">Ajuste conforme o consumo real do restaurante. Unidades "g" e "ml" viram kg e L automaticamente.</p>
+    <table class="itens">
+      <thead><tr><th style="width:40%">Item</th><th>Unidade</th><th class="num">Por adulto</th><th class="num">Por criança</th><th></th></tr></thead>
+      <tbody id="listaItens"></tbody>
+    </table>
+    <div class="row" style="margin-top:10px">
+      <button class="btn sec" id="btnAddItem">+ Adicionar item</button>
+      <label style="margin-left:auto">Margem de segurança (%)<input type="number" id="margem" min="0" step="1"></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Backup dos dados</h2>
+    <p class="hint" style="margin-top:0" id="backupHint"></p>
+    <div class="row">
+      <button class="btn" id="btnExport">Baixar backup (.json)</button>
+      <label class="btn sec" style="flex-direction:row;color:var(--accent);font-size:15px">Restaurar backup<input type="file" id="fileImport" accept=".json,application/json" style="display:none"></label>
+      <button class="btn sec" id="btnMigrar" hidden></button>
+      <button class="btn danger" id="btnLimparAntigas" style="margin-left:auto">Apagar reservas encerradas há +30 dias</button>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ============ LOGIN ============ -->
+<div class="overlay" id="login" hidden>
+  <form class="card" id="formLogin">
+    <h2>☕ Café da Manhã — entrar</h2>
+    <label>E-mail<input type="email" id="lEmail" required autocomplete="username"></label>
+    <label>Senha<input type="password" id="lSenha" required autocomplete="current-password"></label>
+    <button class="btn" type="submit" id="btnEntrar">Entrar</button>
+    <p class="erro" id="lErro"></p>
+  </form>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+// =====================================================================
+//  CONFIGURAÇÃO DO BANCO (Supabase)
+//  Cole a "Project URL" e a chave "Publishable" (ou "anon") do seu projeto.
+//  NUNCA cole aqui a chave "secret" / "service_role".
+//  Deixando vazio, a página funciona no modo local (dados só neste navegador).
+// =====================================================================
+const SUPABASE_URL = "";
+const SUPABASE_KEY = "";
+// =====================================================================
+
+const CONFIGURADO = !!(SUPABASE_URL && SUPABASE_KEY);
+const ONLINE = CONFIGURADO;
+const sb = CONFIGURADO && window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+const EMP = { "9006": "9006 Suites", "madero": "Reserva Madero" };
+const KEY = "cafe-hotel-v1";
+const DEFAULT_ITENS = [
+  { nome: "Pão francês", un: "un", adulto: 2, crianca: 1 },
+  { nome: "Pão de queijo", un: "un", adulto: 3, crianca: 2 },
+  { nome: "Croissant / folhado", un: "un", adulto: 1, crianca: 0.5 },
+  { nome: "Bolo (fatias)", un: "fatia", adulto: 1, crianca: 1 },
+  { nome: "Presunto", un: "g", adulto: 40, crianca: 20 },
+  { nome: "Queijo mussarela", un: "g", adulto: 40, crianca: 20 },
+  { nome: "Leite", un: "ml", adulto: 200, crianca: 250 }
+];
+const DIAS_HISTORICO = 60; // no modo online, carrega reservas com check-out nos últimos 60 dias em diante
+
+// ---------- dados ----------
+function novoDB() { return { reservas: [], avulsos: {}, itens: DEFAULT_ITENS.map(x => ({ ...x })), margem: 10 }; }
+function lerLocal() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY));
+    if (d && Array.isArray(d.reservas)) return Object.assign(novoDB(), d);
+  } catch (e) {}
+  return null;
+}
+let db = ONLINE ? novoDB() : (lerLocal() || novoDB());
+
+// ---------- datas ----------
+const pad = n => String(n).padStart(2, "0");
+const iso = d => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+const toDate = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+const addDays = (s, n) => { const d = toDate(s); d.setDate(d.getDate() + n); return iso(d); };
+const br = s => s ? s.split("-").reverse().join("/") : "";
+const brCurto = s => s.slice(8, 10) + "/" + s.slice(5, 7);
+const diaSemana = s => toDate(s).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+const dataLonga = s => toDate(s).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+function parseData(t) {
+  t = String(t || "").trim();
+  let m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+  if (m) { let y = +m[3]; if (y < 100) y += 2000; return y + "-" + pad(+m[2]) + "-" + pad(+m[1]); }
+  m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[1] + "-" + m[2] + "-" + m[3];
+  return null;
+}
+const hoje = () => iso(new Date());
+let diaSel = addDays(hoje(), 1);
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const $ = id => document.getElementById(id);
+const uid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+function toast(msg, ms = 2400) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), ms); }
+function setStatus(tipo, txt) { const s = $("status"); s.className = "status " + tipo; s.textContent = txt; }
+
+// ---------- camada de gravação (local ou Supabase) ----------
+const okOuErro = r => { if (r && r.error) throw r.error; return r && r.data; };
+const linhaReserva = r => ({ id: r.id, emp: r.emp, apto: String(r.apto), hospede: r.hospede || "", adultos: +r.adultos || 0, criancas: +r.criancas || 0, checkin: r.checkin, checkout: r.checkout, cafe: !!r.cafe, obs: r.obs || "" });
+const linhasExtras = avulsos => Object.entries(avulsos || {}).flatMap(([dia, emps]) => Object.entries(emps || {}).filter(([emp]) => EMP[emp]).map(([emp, v]) => ({ dia, emp, adultos: +v.a || 0, criancas: +v.c || 0 })));
+
+// Grava: no modo local salva no navegador; no online executa fn (chamadas ao Supabase).
+async function gravar(fn) {
+  if (!ONLINE) { localStorage.setItem(KEY, JSON.stringify(db)); return true; }
+  setStatus("wait", "salvando…");
+  try { await fn(); setStatus("ok", "online"); return true; }
+  catch (e) {
+    console.error(e); setStatus("err", "erro ao salvar");
+    toast("Não foi possível salvar no banco: " + (e.message || e), 5000);
+    agendarRecarga(); return false;
+  }
+}
+async function upsertEmLotes(tabela, linhas, opts) {
+  for (let i = 0; i < linhas.length; i += 500) okOuErro(await sb.from(tabela).upsert(linhas.slice(i, i + 500), opts));
+}
+
+const Store = {
+  salvarReserva: r => gravar(async () => okOuErro(await sb.from("reservas").upsert(linhaReserva(r)))),
+  excluirReserva: id => gravar(async () => okOuErro(await sb.from("reservas").delete().eq("id", id))),
+  inserirReservas: lista => gravar(() => upsertEmLotes("reservas", lista.map(linhaReserva))),
+  salvarExtra: (dia, emp) => gravar(async () => {
+    const v = (db.avulsos[dia] || {})[emp] || {};
+    okOuErro(await sb.from("extras").upsert({ dia, emp, adultos: +v.a || 0, criancas: +v.c || 0 }, { onConflict: "dia,emp" }));
+  }),
+  salvarConfig: () => gravar(async () => okOuErro(await sb.from("config").upsert({ id: 1, itens: db.itens, margem: +db.margem || 0 }))),
+  apagarAntigas: lim => gravar(async () => {
+    okOuErro(await sb.from("reservas").delete().lt("checkout", lim));
+    okOuErro(await sb.from("extras").delete().lt("dia", lim));
+  }),
+  enviarTudo: d => gravar(async () => {
+    await upsertEmLotes("reservas", d.reservas.map(linhaReserva));
+    await upsertEmLotes("extras", linhasExtras(d.avulsos), { onConflict: "dia,emp" });
+    if (Array.isArray(d.itens)) okOuErro(await sb.from("config").upsert({ id: 1, itens: d.itens, margem: +d.margem || 0 }));
+  })
+};
+
+// ---------- carregar do Supabase ----------
+async function carregar() {
+  const lim = addDays(hoje(), -DIAS_HISTORICO);
+  const [r, e, c] = await Promise.all([
+    sb.from("reservas").select("id,emp,apto,hospede,adultos,criancas,checkin,checkout,cafe,obs").gte("checkout", lim).order("checkin").limit(5000),
+    sb.from("extras").select("dia,emp,adultos,criancas").gte("dia", lim),
+    sb.from("config").select("itens,margem").eq("id", 1).maybeSingle()
+  ]);
+  for (const x of [r, e, c]) if (x.error) throw x.error;
+  db.reservas = r.data;
+  db.avulsos = {};
+  for (const x of e.data) (db.avulsos[x.dia] ||= {})[x.emp] = { a: x.adultos, c: x.criancas };
+  if (c.data) { db.itens = Array.isArray(c.data.itens) ? c.data.itens : db.itens; db.margem = +c.data.margem; }
+  renderTudo();
+}
+let recargaTimer = null;
+function agendarRecarga() {
+  if (!ONLINE || !sessaoAtiva) return;
+  clearTimeout(recargaTimer);
+  recargaTimer = setTimeout(async () => {
+    try { await carregar(); setStatus("ok", "online"); }
+    catch (err) { console.error(err); setStatus("err", "sem conexão"); }
+  }, 400);
+}
+
+// ---------- regra do café ----------
+// Toma café na manhã do dia D quem dormiu a noite anterior: check-in < D <= check-out
+const tomaCafe = (r, dia) => r.cafe && r.checkin < dia && dia <= r.checkout;
+
+function resumo(dia) {
+  const emp = {};
+  for (const k in EMP) emp[k] = { adultos: 0, criancas: 0, aptos: [], exA: 0, exC: 0 };
+  for (const r of db.reservas) {
+    if (emp[r.emp] && tomaCafe(r, dia)) {
+      const o = emp[r.emp]; o.adultos += +r.adultos || 0; o.criancas += +r.criancas || 0; o.aptos.push(r);
+    }
+  }
+  const av = db.avulsos[dia] || {};
+  let A = 0, C = 0;
+  for (const k in EMP) {
+    const o = emp[k], a = av[k] || {};
+    o.exA = +a.a || 0; o.exC = +a.c || 0;
+    o.totA = o.adultos + o.exA; o.totC = o.criancas + o.exC; o.tot = o.totA + o.totC;
+    A += o.totA; C += o.totC;
+    o.aptos.sort((x, y) => String(x.apto).localeCompare(String(y.apto), "pt-BR", { numeric: true }));
+  }
+  return { emp, A, C, T: A + C };
+}
+
+function pedido(res) {
+  const mg = 1 + (+db.margem || 0) / 100;
+  return db.itens.filter(i => i.nome && ((+i.adulto || 0) || (+i.crianca || 0)))
+    .map(i => ({ nome: i.nome, un: i.un, q: Math.ceil((res.A * (+i.adulto || 0) + res.C * (+i.crianca || 0)) * mg) }));
+}
+function fmtQ(q, un) {
+  const u = String(un || "").toLowerCase();
+  if (u === "g" && q >= 1000) return (q / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " kg";
+  if (u === "ml" && q >= 1000) return (q / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " L";
+  return q.toLocaleString("pt-BR") + " " + (un || "");
+}
+const pl = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const pessoas = (a, c) => `${a} adulto${a === 1 ? "" : "s"}${c ? `, ${c} criança${c === 1 ? "" : "s"}` : ""}`;
+
+// ---------- render: relação ----------
+function renderRelacao() {
+  $("dia").value = diaSel;
+  $("diaTitulo").textContent = dataLonga(diaSel);
+  const res = resumo(diaSel);
+
+  let w = "";
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(hoje(), i), r = resumo(d);
+    const nome = i === 0 ? "hoje" : i === 1 ? "amanhã" : diaSemana(d);
+    w += `<div class="day ${d === diaSel ? "sel" : ""}" data-dia="${d}">${nome} ${brCurto(d)}<b>${r.T}</b>pessoas</div>`;
+  }
+  $("semana").innerHTML = w;
+
+  let s = "";
+  for (const k in EMP) {
+    const o = res.emp[k];
+    s += `<div class="stat e${k}"><div class="lbl">${EMP[k]}</div><div class="n">${o.tot}</div>
+      <div class="t">${pessoas(o.totA, o.totC)} · ${pl(o.aptos.length, "apto")}${o.exA + o.exC ? ` · +${o.exA + o.exC} extra` : ""}</div></div>`;
+  }
+  s += `<div class="stat"><div class="lbl">Total do café</div><div class="n">${res.T}</div><div class="t">${pessoas(res.A, res.C)}</div></div>`;
+  $("stats").innerHTML = s;
+
+  // não redesenha as listas enquanto alguém digita um extra (evita perder o que está digitando)
+  const foco = document.activeElement;
+  if (!(foco && foco.dataset && foco.dataset.ex)) {
+    let l = "";
+    for (const k in EMP) {
+      const o = res.emp[k];
+      let rows = o.aptos.map(r => `<tr><td><b>${esc(r.apto)}</b></td><td>${esc(r.hospede)}${r.obs ? `<br><small style="color:var(--muted)">${esc(r.obs)}</small>` : ""}</td>
+        <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
+        <td>${r.checkout === diaSel ? '<span class="tag out">sai hoje</span>' : "até " + brCurto(r.checkout)}</td></tr>`).join("");
+      if (!rows) rows = `<tr><td colspan="5" class="empty">Nenhum apartamento com café neste dia.</td></tr>`;
+      else rows += `<tr class="foot"><td colspan="2">Total ${pl(o.aptos.length, "apto")}</td><td class="num">${o.adultos}</td><td class="num">${o.criancas}</td><td></td></tr>`;
+      l += `<div class="card"><h3><span class="tag e${k}">${EMP[k]}</span></h3>
+        <table><thead><tr><th>Apto</th><th>Hóspede</th><th class="num">Ad.</th><th class="num">Cr.</th><th>Saída</th></tr></thead><tbody>${rows}</tbody></table>
+        <div class="extras"><span>Extras do dia (day use, café avulso pago, convidados…)</span>
+          <label>Adultos<input type="number" min="0" data-ex="${k}" data-t="a" value="${o.exA || ""}" placeholder="0"></label>
+          <label>Crianças<input type="number" min="0" data-ex="${k}" data-t="c" value="${o.exC || ""}" placeholder="0"></label>
+        </div>
+        ${o.exA + o.exC ? `<p class="printonly hint">Extras: ${pessoas(o.exA, o.exC)}</p>` : ""}
+      </div>`;
+    }
+    $("listas").innerHTML = l;
+  }
+
+  const p = pedido(res);
+  $("pedido").innerHTML = res.T && p.length
+    ? p.map(i => `<tr><td>${esc(i.nome)}</td><td class="num"><b>${esc(fmtQ(i.q, i.un))}</b></td></tr>`).join("")
+    : `<tr><td colspan="2" class="empty">Sem pessoas previstas para este dia.</td></tr>`;
+  $("pedidoHint").textContent = `Calculado para ${pl(res.T, "pessoa")}, com ${+db.margem || 0}% de margem. Ajuste as quantidades por pessoa em "Pedido padaria & backup".`;
+  $("printFoot").textContent = "Gerado em " + new Date().toLocaleString("pt-BR");
+}
+
+function textoWhatsApp() {
+  const res = resumo(diaSel);
+  let t = `☕ *Café da manhã – ${dataLonga(diaSel)}*\n\n`;
+  for (const k in EMP) {
+    const o = res.emp[k];
+    t += `*${EMP[k]}:* ${pl(o.tot, "pessoa")} (${pessoas(o.totA, o.totC)}) – ${pl(o.aptos.length, "apto")}\n`;
+  }
+  t += `\n*TOTAL: ${pl(res.T, "pessoa")}* (${pessoas(res.A, res.C)})\n`;
+  const p = pedido(res);
+  if (res.T && p.length) t += `\n🥐 *Pedido padaria:*\n` + p.map(i => `• ${i.nome}: ${fmtQ(i.q, i.un)}`).join("\n") + "\n";
+  return t;
+}
+
+// ---------- render: reservas ----------
+function renderReservas() {
+  const q = $("busca").value.trim().toLowerCase(), fe = $("filtroEmp").value, per = $("filtroPer").value, h = hoje();
+  const lista = db.reservas
+    .filter(r => (!fe || r.emp === fe) && (per === "todas" || r.checkout >= h) &&
+      (!q || String(r.apto).toLowerCase().includes(q) || String(r.hospede || "").toLowerCase().includes(q)))
+    .sort((a, b) => a.checkin.localeCompare(b.checkin) || a.emp.localeCompare(b.emp) || String(a.apto).localeCompare(String(b.apto), "pt-BR", { numeric: true }));
+  $("listaRes").innerHTML = lista.length ? lista.map(r => `<tr>
+      <td><span class="tag e${r.emp}">${r.emp === "9006" ? "9006" : "Madero"}</span></td>
+      <td><b>${esc(r.apto)}</b></td><td>${esc(r.hospede)}</td>
+      <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
+      <td>${br(r.checkin)}</td><td>${br(r.checkout)}</td>
+      <td>${r.cafe ? "✔" : '<span class="tag no">sem café</span>'}</td>
+      <td><small>${esc(r.obs)}</small></td>
+      <td style="white-space:nowrap"><button class="btn sec small" data-edit="${esc(r.id)}">Editar</button>
+        <button class="btn danger small" data-del="${esc(r.id)}">✕</button></td></tr>`).join("")
+    : `<tr><td colspan="10" class="empty">Nenhuma reserva encontrada.</td></tr>`;
+}
+
+// ---------- render: config ----------
+function renderConfig() {
+  const foco = document.activeElement;
+  if (foco && (foco.dataset.it !== undefined || foco.id === "margem")) return; // não atrapalha quem está digitando
+  $("margem").value = db.margem;
+  $("listaItens").innerHTML = db.itens.map((i, n) => `<tr>
+    <td><input type="text" data-it="${n}" data-f="nome" value="${esc(i.nome)}"></td>
+    <td><input type="text" data-it="${n}" data-f="un" value="${esc(i.un)}" style="width:80px"></td>
+    <td class="num"><input type="number" step="any" min="0" data-it="${n}" data-f="adulto" value="${i.adulto}"></td>
+    <td class="num"><input type="number" step="any" min="0" data-it="${n}" data-f="crianca" value="${i.crianca}"></td>
+    <td><button class="btn danger small" data-delit="${n}">✕</button></td></tr>`).join("");
+  $("backupHint").textContent = ONLINE
+    ? `Os dados ficam no banco (Supabase) e aparecem em todos os computadores logados. O backup baixa as reservas carregadas (check-out dos últimos ${DIAS_HISTORICO} dias em diante).`
+    : "Os dados ficam salvos neste navegador, neste computador. Faça backup de vez em quando, ou para levar para outro computador.";
+  const local = ONLINE ? lerLocal() : null;
+  $("btnMigrar").hidden = !(local && local.reservas.length);
+  if (local) $("btnMigrar").textContent = `Enviar ao banco os dados antigos deste navegador (${pl(local.reservas.length, "reserva")})`;
+}
+
+function renderTudo() { renderRelacao(); renderReservas(); renderConfig(); }
+
+// ---------- eventos ----------
+document.querySelectorAll("nav button[data-tab]").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button[data-tab]").forEach(x => x.classList.toggle("active", x === b));
+  document.querySelectorAll("section.tab").forEach(s => s.classList.toggle("active", s.id === "tab-" + b.dataset.tab));
+  if (b.dataset.tab === "relacao") renderRelacao();
+});
+
+$("dia").onchange = e => { if (e.target.value) { diaSel = e.target.value; renderRelacao(); } };
+$("btnPrev").onclick = () => { diaSel = addDays(diaSel, -1); renderRelacao(); };
+$("btnNext").onclick = () => { diaSel = addDays(diaSel, 1); renderRelacao(); };
+$("btnHoje").onclick = () => { diaSel = hoje(); renderRelacao(); };
+$("btnAmanha").onclick = () => { diaSel = addDays(hoje(), 1); renderRelacao(); };
+$("semana").onclick = e => { const d = e.target.closest("[data-dia]"); if (d) { diaSel = d.dataset.dia; renderRelacao(); } };
+$("listas").addEventListener("change", e => {
+  const el = e.target; if (!el.dataset.ex) return;
+  const emp = el.dataset.ex, dia = diaSel;
+  ((db.avulsos[dia] ||= {})[emp] ||= {})[el.dataset.t] = Math.max(0, parseInt(el.value) || 0);
+  el.blur(); renderRelacao(); Store.salvarExtra(dia, emp);
+});
+$("btnImprimir").onclick = () => window.print();
+$("btnCopiar").onclick = async () => {
+  const t = textoWhatsApp();
+  try { await navigator.clipboard.writeText(t); }
+  catch (e) { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+  toast("Copiado! É só colar no WhatsApp.");
+};
+
+// formulário de reserva
+for (const k in EMP) { $("fEmp").add(new Option(EMP[k], k)); $("filtroEmp").add(new Option(EMP[k], k)); }
+let editId = null;
+function limparForm() {
+  editId = null; $("formRes").reset();
+  $("fIn").value = hoje(); $("fOut").value = addDays(hoje(), 1);
+  $("formTitulo").textContent = "Nova reserva"; $("btnSalvar").textContent = "Adicionar"; $("btnCancelar").style.display = "none";
+}
+$("fIn").onchange = () => { if ($("fIn").value && (!$("fOut").value || $("fOut").value <= $("fIn").value)) $("fOut").value = addDays($("fIn").value, 1); };
+$("formRes").onsubmit = async e => {
+  e.preventDefault();
+  const r = {
+    id: editId || uid(), emp: $("fEmp").value, apto: $("fApto").value.trim(), hospede: $("fHosp").value.trim(),
+    adultos: Math.max(0, parseInt($("fAd").value) || 0), criancas: Math.max(0, parseInt($("fCr").value) || 0),
+    checkin: $("fIn").value, checkout: $("fOut").value, cafe: $("fCafe").checked, obs: $("fObs").value.trim()
+  };
+  if (r.checkout <= r.checkin) { toast("O check-out precisa ser depois do check-in."); return; }
+  const editando = !!editId;
+  if (editando) db.reservas = db.reservas.map(x => x.id === editId ? r : x); else db.reservas.push(r);
+  const empAnterior = r.emp; limparForm(); $("fEmp").value = empAnterior; $("fApto").focus();
+  renderTudo();
+  if (await Store.salvarReserva(r)) toast(editando ? "Reserva atualizada." : `Apto ${r.apto} adicionado.`);
+};
+$("btnCancelar").onclick = limparForm;
+$("listaRes").onclick = async e => {
+  const ed = e.target.dataset.edit, del = e.target.dataset.del;
+  if (ed) {
+    const r = db.reservas.find(x => x.id === ed); if (!r) return;
+    editId = r.id; $("fEmp").value = r.emp; $("fApto").value = r.apto; $("fHosp").value = r.hospede || "";
+    $("fAd").value = r.adultos; $("fCr").value = r.criancas; $("fIn").value = r.checkin; $("fOut").value = r.checkout;
+    $("fCafe").checked = r.cafe; $("fObs").value = r.obs || "";
+    $("formTitulo").textContent = `Editando apto ${r.apto}`; $("btnSalvar").textContent = "Salvar alterações"; $("btnCancelar").style.display = "";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  if (del) {
+    const r = db.reservas.find(x => x.id === del);
+    if (r && confirm(`Excluir a reserva do apto ${r.apto} (${EMP[r.emp]})?`)) {
+      db.reservas = db.reservas.filter(x => x.id !== del); renderTudo();
+      if (await Store.excluirReserva(del)) toast("Reserva excluída.");
+    }
+  }
+};
+["busca", "filtroEmp", "filtroPer"].forEach(id => $(id).addEventListener("input", renderReservas));
+
+// importação por colar
+$("btnImport").onclick = async () => {
+  const linhas = $("txtImport").value.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const novas = [], erros = [];
+  linhas.forEach((l, n) => {
+    const c = l.split(l.includes("\t") ? "\t" : ";").map(x => x.trim());
+    const empTxt = (c[0] || "").toLowerCase();
+    const emp = empTxt.includes("9006") ? "9006" : empTxt.includes("madero") ? "madero" : null;
+    const ci = parseData(c[5]), co = parseData(c[6]);
+    if (!emp || !c[1] || !ci || !co || co <= ci) { erros.push(n + 1); return; }
+    novas.push({ id: uid(), emp, apto: c[1], hospede: c[2] || "", adultos: Math.max(0, parseInt(c[3]) || 0), criancas: Math.max(0, parseInt(c[4]) || 0), checkin: ci, checkout: co, cafe: true, obs: "" });
+  });
+  if (!novas.length) { toast("Nenhuma linha válida." + (erros.length ? ` Linhas com problema: ${erros.slice(0, 8).join(", ")}` : ""), 4000); return; }
+  db.reservas.push(...novas); renderTudo();
+  if (await Store.inserirReservas(novas)) {
+    $("txtImport").value = "";
+    toast(`${novas.length} reserva(s) importada(s)` + (erros.length ? ` · linhas ignoradas: ${erros.slice(0, 8).join(", ")}${erros.length > 8 ? "…" : ""}` : ""), 4000);
+  }
+};
+
+// itens do pedido
+$("listaItens").addEventListener("change", e => {
+  const el = e.target; if (el.dataset.it === undefined) return;
+  const it = db.itens[+el.dataset.it], f = el.dataset.f;
+  it[f] = (f === "adulto" || f === "crianca") ? Math.max(0, parseFloat(el.value) || 0) : el.value.trim();
+  renderRelacao(); Store.salvarConfig();
+});
+$("listaItens").onclick = e => {
+  if (e.target.dataset.delit !== undefined) { db.itens.splice(+e.target.dataset.delit, 1); renderConfig(); renderRelacao(); Store.salvarConfig(); }
+};
+$("btnAddItem").onclick = () => { db.itens.push({ nome: "", un: "un", adulto: 1, crianca: 0 }); renderConfig(); Store.salvarConfig(); };
+$("margem").onchange = e => { db.margem = Math.max(0, parseFloat(e.target.value) || 0); e.target.blur(); renderRelacao(); Store.salvarConfig(); };
+
+// backup
+$("btnExport").onclick = () => {
+  const blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `backup-cafe-${hoje()}.json`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$("fileImport").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const fr = new FileReader();
+  fr.onload = async () => {
+    e.target.value = "";
+    let d;
+    try { d = JSON.parse(fr.result); if (!Array.isArray(d.reservas)) throw 0; }
+    catch (err) { toast("Arquivo de backup inválido."); return; }
+    d = Object.assign(novoDB(), d);
+    if (ONLINE) {
+      if (!confirm(`Enviar ${d.reservas.length} reservas deste backup para o banco? Reservas iguais (mesmo código) serão atualizadas; as outras continuam lá.`)) return;
+      if (await Store.enviarTudo(d)) { toast("Backup enviado ao banco."); agendarRecarga(); }
+    } else {
+      if (!confirm(`Restaurar backup com ${d.reservas.length} reservas? Os dados atuais serão substituídos.`)) return;
+      db = d; await gravar(); renderTudo(); toast("Backup restaurado.");
+    }
+  };
+  fr.readAsText(f);
+};
+$("btnMigrar").onclick = async () => {
+  const local = lerLocal(); if (!local) return;
+  if (!confirm(`Enviar ao banco ${pl(local.reservas.length, "reserva")} que estavam salvas só neste navegador?`)) return;
+  $("btnMigrar").disabled = true;
+  if (await Store.enviarTudo(local)) {
+    localStorage.setItem(KEY + "-migrado-" + hoje(), localStorage.getItem(KEY));
+    localStorage.removeItem(KEY);
+    toast("Dados enviados ao banco!"); agendarRecarga();
+  }
+  $("btnMigrar").disabled = false;
+};
+$("btnLimparAntigas").onclick = async () => {
+  const lim = addDays(hoje(), -30), n = db.reservas.filter(r => r.checkout < lim).length;
+  if (!n) { toast("Nenhuma reserva antiga para apagar."); return; }
+  if (confirm(`Apagar ${pl(n, "reserva")} com check-out antes de ${br(lim)}? Não dá para desfazer.`)) {
+    db.reservas = db.reservas.filter(r => r.checkout >= lim);
+    for (const d in db.avulsos) if (d < lim) delete db.avulsos[d];
+    renderTudo();
+    if (await Store.apagarAntigas(lim)) toast(`${pl(n, "reserva")} apagada(s).`);
+  }
+};
+
+// ---------- login / sessão (modo online) ----------
+let sessaoAtiva = false, canal = null;
+function mostrarLogin(msg) { $("login").hidden = false; $("lErro").textContent = msg || ""; setTimeout(() => $("lEmail").focus(), 50); }
+async function iniciarSessao() {
+  sessaoAtiva = true; $("login").hidden = true; $("btnSair").hidden = false;
+  setStatus("wait", "carregando…");
+  try { await carregar(); setStatus("ok", "online"); }
+  catch (err) { console.error(err); setStatus("err", "erro ao carregar"); toast("Erro ao carregar do banco: " + (err.message || err), 6000); }
+  if (!canal) {
+    canal = sb.channel("cafe-mudancas");
+    for (const t of ["reservas", "extras", "config"]) canal.on("postgres_changes", { event: "*", schema: "public", table: t }, agendarRecarga);
+    canal.subscribe();
+  }
+}
+function encerrarSessao() {
+  sessaoAtiva = false; $("btnSair").hidden = true;
+  if (canal) { sb.removeChannel(canal); canal = null; }
+  db = novoDB(); renderTudo(); setStatus("err", "desconectado"); mostrarLogin();
+}
+$("formLogin").onsubmit = async e => {
+  e.preventDefault();
+  $("btnEntrar").disabled = true; $("lErro").textContent = "";
+  const { error } = await sb.auth.signInWithPassword({ email: $("lEmail").value.trim(), password: $("lSenha").value });
+  $("btnEntrar").disabled = false;
+  if (error) { $("lErro").textContent = /invalid/i.test(error.message) ? "E-mail ou senha incorretos." : error.message; return; }
+  $("lSenha").value = "";
+};
+$("btnSair").onclick = () => { if (confirm("Sair deste computador?")) sb.auth.signOut(); };
+
+async function iniciar() {
+  limparForm();
+  renderTudo();
+  if (!CONFIGURADO) { setStatus("", "modo local (só este PC)"); return; }
+  if (!sb) {
+    setStatus("err", "sem internet");
+    mostrarLogin("Não foi possível carregar a conexão com o banco. Verifique a internet e aperte F5.");
+    $("btnEntrar").disabled = true; return;
+  }
+  sb.auth.onAuthStateChange((evento, sessao) => {
+    // adia para fora do callback (recomendação do Supabase)
+    setTimeout(() => {
+      if (sessao && !sessaoAtiva) iniciarSessao();
+      else if (!sessao && sessaoAtiva) encerrarSessao();
+    }, 0);
+  });
+  const { data } = await sb.auth.getSession();
+  if (!data.session) { setStatus("err", "faça login"); mostrarLogin(); }
+  // recarrega ao voltar para a janela e a cada 2 min (garantia caso o tempo real caia)
+  window.addEventListener("focus", agendarRecarga);
+  setInterval(agendarRecarga, 120000);
+}
+
+// atualiza "hoje/amanhã" se a página ficar aberta virando a noite
+let ultimoHoje = hoje();
+setInterval(() => { if (hoje() !== ultimoHoje) { ultimoHoje = hoje(); diaSel = addDays(ultimoHoje, 1); renderRelacao(); } }, 60000);
+
+iniciar();
+</script>
+</body>
+</html>
