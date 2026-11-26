@@ -9,13 +9,23 @@
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex, nofollow">
 <title>Café da Manhã – Relação Diária</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="favicon.svg">
+<meta name="theme-color" content="#2a2622">
 <style>
 :root{--bg:#f6f4ef;--card:#fff;--ink:#2a2622;--muted:#6f675e;--line:#e4ded4;--accent:#8a5a2b;--a9006:#2f6f8f;--amad:#5f8a2e;--danger:#b03a2e;--soft:#faf7f2}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.4}
 header{background:var(--ink);color:#fff;padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-header h1{font-size:18px;margin:0;font-weight:600}
-header h1 span{opacity:.6;font-weight:400}
+header h1{font-size:18px;margin:0;font-weight:600;display:flex;align-items:center;gap:10px}
+.marca{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:var(--accent);color:#fff;flex:none}
+.marca svg{width:22px;height:22px}
+.marca.grande{width:44px;height:44px;border-radius:11px}
+.marca.grande svg{width:30px;height:30px}
+.login-topo{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.login-topo h2{margin:0}
+.login-topo small{display:block;color:var(--muted);font-size:12px;font-weight:400;margin-top:2px}
+header h1 .sub{opacity:.6;font-weight:400}
 .status{font-size:12px;padding:3px 10px;border-radius:999px;background:#ffffff1a;color:#d9d2c7}
 .status::before{content:"● ";color:#bbb}
 .status.ok::before{color:#7ed37e}
@@ -132,7 +142,8 @@ table.rev small{color:var(--muted);font-size:11px}
 </head>
 <body>
 <header>
-  <h1>☕ Café da Manhã <span>· 9006 Suites & Reserva Madero</span></h1>
+  <h1><span class="marca" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h12v4a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V9z"/><path d="M16 10.5h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M7.5 3c-.7.9-.7 1.8 0 2.7M10 3c-.7.9-.7 1.8 0 2.7M12.5 3c-.7.9-.7 1.8 0 2.7"/><path d="M3 21h14"/></svg></span>
+    <span>Café da Manhã <span class="sub">· 9006 Suites & Reserva Madero</span></span></h1>
   <span class="status" id="status">modo local</span>
   <nav>
     <button data-tab="relacao" class="active">Relação do dia</button>
@@ -281,7 +292,10 @@ table.rev small{color:var(--muted);font-size:11px}
 <!-- ============ LOGIN ============ -->
 <div class="overlay" id="login" hidden>
   <form class="card" id="formLogin">
-    <h2>☕ Café da Manhã — entrar</h2>
+    <div class="login-topo">
+      <span class="marca grande" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h12v4a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V9z"/><path d="M16 10.5h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M7.5 3c-.7.9-.7 1.8 0 2.7M10 3c-.7.9-.7 1.8 0 2.7M12.5 3c-.7.9-.7 1.8 0 2.7"/><path d="M3 21h14"/></svg></span>
+      <h2>Café da Manhã<small>9006 Suites · Reserva Madero — acesso da equipe</small></h2>
+    </div>
     <label>E-mail<input type="email" id="lEmail" required autocomplete="username"></label>
     <label>Senha<input type="password" id="lSenha" required autocomplete="current-password"></label>
     <button class="btn" type="submit" id="btnEntrar">Entrar</button>
