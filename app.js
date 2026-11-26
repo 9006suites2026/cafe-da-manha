@@ -72,7 +72,8 @@ function setStatus(tipo, txt) { const s = $("status"); s.className = "status " +
 
 // ---------- camada de gravação (local ou Supabase) ----------
 const okOuErro = r => { if (r && r.error) throw r.error; return r && r.data; };
-const linhaReserva = r => ({ id: r.id, emp: r.emp, apto: String(r.apto), hospede: r.hospede || "", acompanhante: r.acompanhante || "", reserva: String(r.reserva || ""), saida_definida: !saidaIncerta(r), adultos: +r.adultos || 0, criancas: +r.criancas || 0, checkin: r.checkin, checkout: r.checkout, cafe: !!r.cafe, obs: r.obs || "" });
+const linhaReserva = r => ({ id: r.id, emp: r.emp, apto: String(r.apto), hospede: r.hospede || "", acompanhante: r.acompanhante || "", reserva: String(r.reserva || ""), saida_definida: !saidaIncerta(r),
+  conferida: !!r.conferida, conferida_em: r.conferida ? (r.conferida_em || null) : null, conferida_por: r.conferida ? String(r.conferida_por || "").slice(0, 200) : "", adultos: +r.adultos || 0, criancas: +r.criancas || 0, checkin: r.checkin, checkout: r.checkout, cafe: !!r.cafe, obs: r.obs || "" });
 const linhasExtras = avulsos => Object.entries(avulsos || {}).flatMap(([dia, emps]) => Object.entries(emps || {}).filter(([emp]) => EMP[emp]).map(([emp, v]) => ({ dia, emp, adultos: +v.a || 0, criancas: +v.c || 0 })));
 
 // Grava: no modo local salva no navegador; no online executa fn (chamadas ao Supabase).
@@ -142,7 +143,7 @@ const itemValido = i => i && typeof i === "object" && typeof i.nome === "string"
 async function carregar() {
   const lim = addDays(hoje(), -DIAS_HISTORICO);
   const [reservas, extras, c] = await Promise.all([
-    buscarTudo(() => sb.from("reservas").select("id,emp,apto,reserva,saida_definida,hospede,acompanhante,adultos,criancas,checkin,checkout,cafe,obs").gte("checkout", lim).order("checkin").order("id")),
+    buscarTudo(() => sb.from("reservas").select("id,emp,apto,reserva,saida_definida,conferida,conferida_em,conferida_por,hospede,acompanhante,adultos,criancas,checkin,checkout,cafe,obs").gte("checkout", lim).order("checkin").order("id")),
     buscarTudo(() => sb.from("extras").select("dia,emp,adultos,criancas").gte("dia", lim).order("dia").order("emp")),
     sb.from("config").select("itens,margem").eq("id", 1).maybeSingle()
   ]);
@@ -240,7 +241,7 @@ function renderRelacao() {
     let l = "";
     for (const k in EMP) {
       const o = res.emp[k];
-      let rows = o.aptos.map(r => `<tr${r.cafe ? "" : ' style="opacity:.75"'}><td><b>${esc(r.apto)}</b></td>
+      let rows = o.aptos.map(r => `<tr class="${r.conferida ? "conf" : ""}"${r.cafe ? "" : ' style="opacity:.75"'}><td style="white-space:nowrap"><button class="btn-conf${r.conferida ? " ok" : ""} noprint" data-conf="${esc(r.id)}" title="${r.conferida ? "Conferida — clique para desmarcar" : "Marcar como conferida"}" style="padding:1px 7px">${r.conferida ? "✓" : "○"}</button> <b>${esc(r.apto)}</b></td>
         <td>${esc(r.hospede)}${r.reserva ? ` <small style="color:var(--muted)">· Res. ${esc(r.reserva)}</small>` : ""}${listaAcomp(r.acompanhante).map(a => `<br><small>+ ${esc(a)}</small>`).join("")}${r.obs ? `<br><small style="color:var(--muted)">${esc(r.obs)}</small>` : ""}</td>
         <td class="num">${num(r.adultos)}</td><td class="num">${num(r.criancas)}</td>
         <td>${r.cafe ? "" : '<span class="tag no">sem café</span> '}${saidaIncerta(r) ? "" : r.checkout === diaSel ? '<span class="tag out">sai hoje</span>' : "até " + brCurto(r.checkout)}</td></tr>`).join("");
@@ -500,6 +501,11 @@ function prepararImportacao() {
     const p = i.pdf, ex = acharEstadia(emp, p.reserva, p.apto);
     Object.assign(i, { apto: p.apto, reserva: p.reserva, hospede: p.hospede, acompanhante: p.acompanhante, adultos: p.adultos, criancas: p.criancas, cafe: p.cafe, obs: p.obs });
     i.exId = ex ? ex.id : null; i.cafeMantido = false;
+    // "conferida" continua valendo no dia seguinte, a não ser que o PDF traga algo diferente
+    const mudou = !!ex && (num(ex.adultos) !== num(p.adultos) || num(ex.criancas) !== num(p.criancas) || (p.cafe && !ex.cafe));
+    i.conferida = !!(ex && ex.conferida && !mudou);
+    i.mudou = !!(ex && ex.conferida && mudou);
+    i.confEm = i.conferida ? ex.conferida_em : null; i.confPor = i.conferida ? ex.conferida_por : "";
     if (ex) {
       i.hospede = p.hospede || ex.hospede;
       i.acompanhante = ex.acompanhante || p.acompanhante;
@@ -523,6 +529,7 @@ function renderRevisao() {
   const el = $("pdfRevisao");
   if (!imp) { el.innerHTML = ""; return; }
   const existentes = imp.itens.filter(i => i.exId).length, mantidos = imp.itens.filter(i => i.cafeMantido).length;
+  const conferidas = imp.itens.filter(i => i.conferida).length, mudaram = imp.itens.filter(i => i.mudou).length;
   const pessoasCafe = imp.itens.filter(i => i.cafe).reduce((s, i) => s + (+i.adultos || 0) + (+i.criancas || 0), 0);
   const semNomeTotal = imp.itens.reduce((s, i) => { const nomes = listaAcomp(i.acompanhante); return s + Math.max(0, qtdAcomp(i.adultos, i.criancas, nomes) - nomes.length); }, 0);
   let aviso = "";
@@ -537,9 +544,15 @@ function renderRevisao() {
         <br>${imp.itens.length - existentes} nova(s) ·<b>${existentes} já cadastrada(s)</b> (mantém acompanhantes, observações e café)${mantidos ? ` · <b>${mantidos} com café mantido</b>` : ""}</div>
       ${aviso}
     </div>
+    <div class="row" style="align-items:center;margin-bottom:8px">
+      <span><span class="okmark">✓</span><b>${conferidas}</b> de ${imp.itens.length} conferido(s)${mudaram ? ` · <span class="tag mudou">${mudaram} mudou(aram) no PDF — conferir de novo</span>` : ""}</span>
+      <button class="btn-conf" id="btnImpConfTodos" type="button">✓ Marcar todos como conferidos</button>
+    </div>
     <div style="overflow-x:auto"><table class="rev">
-      <thead><tr><th style="width:80px">Apto</th><th style="width:80px">Reserva</th><th>Titular</th><th>Acompanhante(s)</th><th style="width:60px">Ad.</th><th style="width:60px">Cr.</th><th style="width:120px">Café</th><th>Obs.</th><th></th></tr></thead>
-      <tbody>${imp.itens.map((i, n) => `<tr class="${i.cafe ? "" : "sem"}">
+      <thead><tr><th style="width:96px">Conferida</th><th style="width:80px">Apto</th><th style="width:80px">Reserva</th><th>Titular</th><th>Acompanhante(s)</th><th style="width:60px">Ad.</th><th style="width:60px">Cr.</th><th style="width:120px">Café</th><th>Obs.</th><th></th></tr></thead>
+      <tbody>${imp.itens.map((i, n) => `<tr class="${i.conferida ? "conf" : i.cafe ? "" : "sem"}">
+        <td><label class="conf-chk"><input type="checkbox" data-i="${n}" data-f="conferida"${i.conferida ? " checked" : ""}> ${i.conferida ? "Conferida" : "Conferir"}</label>
+          ${i.mudou ? '<span class="tag mudou" title="Estava conferida, mas o PDF trouxe outra quantidade de pessoas ou café">mudou</span>' : ""}</td>
         <td><input data-i="${n}" data-f="apto" value="${esc(i.apto)}"><small>${i.exId ? "↻ já cadastrada" : "nova"}</small></td>
         <td><input data-i="${n}" data-f="reserva" value="${esc(i.reserva)}"></td>
         <td><input data-i="${n}" data-f="hospede" value="${esc(i.hospede)}"></td>
@@ -581,7 +594,9 @@ async function salvarImportacao() {
       id, emp, apto, reserva, hospede: String(i.hospede).trim(), acompanhante: String(i.acompanhante).trim(),
       adultos: Math.max(0, parseInt(i.adultos) || 0), criancas: Math.max(0, parseInt(i.criancas) || 0),
       checkin: ex && ex.checkin < i.checkin ? ex.checkin : i.checkin, checkout: saida,
-      cafe: !!i.cafe, obs: String(i.obs).trim(), saida_definida: !!i.saidaDefinida
+      cafe: !!i.cafe, obs: String(i.obs).trim(), saida_definida: !!i.saidaDefinida,
+      conferida: !!i.conferida, conferida_em: i.conferida ? (i.confEm || new Date().toISOString()) : null,
+      conferida_por: i.conferida ? (i.confPor || usuarioEmail || "este computador") : ""
     };
   });
   // encerra as estadias que não vieram no PDF (marcadas na conferência)
@@ -603,13 +618,24 @@ async function salvarImportacao() {
 }
 
 // ---------- render: reservas ----------
+function botaoConf(r) {
+  const quem = r.conferida && (r.conferida_por || r.conferida_em)
+    ? `Conferida${r.conferida_por ? " por " + r.conferida_por : ""}${r.conferida_em ? " em " + new Date(r.conferida_em).toLocaleString("pt-BR") : ""}. Clique para desmarcar.`
+    : "Clique para marcar como conferida";
+  return `<button class="btn-conf${r.conferida ? " ok" : ""}" data-conf="${esc(r.id)}" title="${esc(quem)}">${r.conferida ? "✓ Conferida" : "Conferir"}</button>`;
+}
 function renderReservas() {
   const q = $("busca").value.trim().toLowerCase(), fe = $("filtroEmp").value, per = $("filtroPer").value, h = hoje();
+  const ativas = db.reservas.filter(r => r.checkout >= h && (!fe || r.emp === fe));
+  const nConf = ativas.filter(r => r.conferida).length;
+  $("contConf").innerHTML = ativas.length ? `<span class="okmark">✓</span><b>${nConf}</b> de ${ativas.length} reservas hospedadas/futuras conferidas${ativas.length - nConf ? ` · <b>${ativas.length - nConf}</b> pendente(s)` : " — tudo conferido!"}` : "";
   const lista = db.reservas
-    .filter(r => (!fe || r.emp === fe) && (per === "todas" || r.checkout >= h) &&
+    .filter(r => (!fe || r.emp === fe) &&
+      (per === "todas" || (r.checkout >= h && (per === "ativas" || (per === "pendentes" ? !r.conferida : !!r.conferida)))) &&
       (!q || String(r.apto).toLowerCase().includes(q) || String(r.reserva || "").toLowerCase().includes(q) ||String(r.hospede || "").toLowerCase().includes(q) || String(r.acompanhante || "").toLowerCase().includes(q)))
     .sort((a, b) => a.checkin.localeCompare(b.checkin) || a.emp.localeCompare(b.emp) || String(a.apto).localeCompare(String(b.apto), "pt-BR", { numeric: true }));
-  $("listaRes").innerHTML = lista.length ? lista.map(r => `<tr>
+  $("listaRes").innerHTML = lista.length ? lista.map(r => `<tr class="${r.conferida ? "conf" : ""}">
+      <td>${botaoConf(r)}</td>
       <td><span class="tag e${esc(r.emp)}">${r.emp === "9006" ? "9006" : "Madero"}</span></td>
       <td><b>${esc(r.apto)}</b></td><td>${esc(r.reserva)}</td><td>${esc(r.hospede)}</td><td>${listaAcomp(r.acompanhante).map(esc).join("<br>")}</td>
       <td class="num">${num(r.adultos)}</td><td class="num">${num(r.criancas)}</td>
@@ -618,7 +644,7 @@ function renderReservas() {
       <td><small>${esc(r.obs)}</small></td>
       <td style="white-space:nowrap"><button class="btn sec small" data-edit="${esc(r.id)}">Editar</button>
         <button class="btn danger small" data-del="${esc(r.id)}">✕</button></td></tr>`).join("")
-    : `<tr><td colspan="12" class="empty">Nenhuma reserva encontrada.</td></tr>`;
+    : `<tr><td colspan="13" class="empty">Nenhuma reserva encontrada.</td></tr>`;
 }
 
 // ---------- render: config ----------
@@ -711,6 +737,7 @@ $("btnAmanha").onclick = () => { diaSel = addDays(hoje(), 1); renderRelacao(); }
 $("semana").onclick = e => { const d = e.target.closest("[data-dia]"); if (d) { diaSel = d.dataset.dia; renderRelacao(); } };
 $("listas").addEventListener("click", e => {
   const b = e.target.closest("[data-excluir]"); if (b) excluirRelacao(b.dataset.excluir, diaSel);
+  const c = e.target.closest("[data-conf]"); if (c) alternarConferida(c.dataset.conf);
 });
 $("btnDesfazer").onclick = desfazerExclusao;
 $("btnFecharDesfazer").onclick = esconderDesfazer;
@@ -755,6 +782,7 @@ window.addEventListener("drop", e => {
 $("pdfRevisao").addEventListener("input", e => {
   const el = e.target; if (!imp || el.dataset.i === undefined) return;
   const it = imp.itens[+el.dataset.i], f = el.dataset.f;
+  if (f === "conferida") { it.conferida = el.checked; it.mudou = false; if (!el.checked) { it.confEm = null; it.confPor = ""; } return; }
   it[f] = f === "cafe" ? el.value === "1" : el.value;
   if (f === "cafe") it.cafeMantido = false;
   if (f === "saida") it.saidaDefinida = true;
@@ -769,12 +797,13 @@ $("pdfRevisao").addEventListener("change", e => {
   const el = e.target; if (!imp) return;
   if (el.id === "impData") { if (el.value) { imp.data = el.value; prepararImportacao(); renderRevisao(); } return; }
   if (el.dataset.aus !== undefined) { imp.ausentes[+el.dataset.aus].encerrar = el.checked; return; }
-  if (["cafe", "adultos", "criancas", "saida"].includes(el.dataset.f)) renderRevisao(); // atualiza totais e avisos
+  if (["cafe", "adultos", "criancas", "saida", "conferida"].includes(el.dataset.f)) renderRevisao(); // atualiza totais, cores e avisos
 });
 $("pdfEmp").addEventListener("change", () => { if (imp) { prepararImportacao(); renderRevisao(); } });
 $("pdfRevisao").addEventListener("click", e => {
   if (!imp) return;
   if (e.target.dataset.rm !== undefined) { imp.itens.splice(+e.target.dataset.rm, 1); renderRevisao(); }
+  if (e.target.id === "btnImpConfTodos") { imp.itens.forEach(i => { i.conferida = true; i.mudou = false; }); renderRevisao(); }
   if (e.target.id === "btnImpSalvar") salvarImportacao();
   if (e.target.id === "btnImpCancelar") { imp = null; renderRevisao(); }
 });
@@ -810,6 +839,7 @@ $("formRes").onsubmit = async e => {
   // saída confirmada: reserva digitada à mão, ou check-out alterado aqui; senão mantém como estava
   const orig = editId ? db.reservas.find(x => x.id === editId) : null;
   r.saida_definida = !orig || !saidaIncerta(orig) || r.checkout !== orig.checkout;
+  if (orig) Object.assign(r, { conferida: !!orig.conferida, conferida_em: orig.conferida_em || null, conferida_por: orig.conferida_por || "" }); // editar não tira a marca
   if (r.checkout <= r.checkin) { toast("O check-out precisa ser depois do check-in."); return; }
   const faltam = Math.max(0, r.adultos + r.criancas - 1 - listaAcomp(r.acompanhante).length);
   if (faltam && !confirm(`O apto ${r.apto} tem ${r.adultos + r.criancas} pessoas, mas falta o nome de ${faltam} acompanhante(s).\n\nSalvar assim mesmo?`)) {
@@ -822,7 +852,16 @@ $("formRes").onsubmit = async e => {
   if (await Store.salvarReserva(r)) toast(editando ? "Reserva atualizada." : `Apto ${r.apto} adicionado.`);
 };
 $("btnCancelar").onclick = limparForm;
+// marcar / desmarcar "conferida" (vale na lista de reservas e na relação do dia)
+async function alternarConferida(id) {
+  const r = db.reservas.find(x => x.id === id); if (!r) return;
+  const novo = { ...r, conferida: !r.conferida, conferida_em: !r.conferida ? new Date().toISOString() : null, conferida_por: !r.conferida ? (usuarioEmail || "este computador") : "" };
+  db.reservas = db.reservas.map(x => x.id === id ? novo : x);
+  renderReservas(); renderRelacao();
+  if (await Store.salvarReserva(novo)) toast(novo.conferida ? `Apto ${novo.apto} conferido ✓` : `Apto ${novo.apto} voltou para pendente.`);
+}
 $("listaRes").onclick = async e => {
+  const conf = e.target.closest("[data-conf]"); if (conf) { alternarConferida(conf.dataset.conf); return; }
   const ed = e.target.dataset.edit, del = e.target.dataset.del;
   if (ed) {
     const r = db.reservas.find(x => x.id === ed); if (!r) return;

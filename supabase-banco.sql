@@ -112,3 +112,10 @@ alter table public.config drop constraint if exists config_limites;
 alter table public.config add constraint config_limites check (
   jsonb_typeof(itens) = 'array' and jsonb_array_length(itens) <= 60
   and pg_column_size(itens) <= 20000 and margem between 0 and 100);
+
+-- (atualização 26/11/2026) marca de "reserva conferida" pela recepção — quem e quando
+alter table public.reservas add column if not exists conferida boolean not null default false;
+alter table public.reservas add column if not exists conferida_em timestamptz;
+alter table public.reservas add column if not exists conferida_por text not null default '';
+alter table public.reservas drop constraint if exists reservas_conferida_limite;
+alter table public.reservas add constraint reservas_conferida_limite check (char_length(conferida_por) <= 200);
