@@ -531,7 +531,7 @@ function renderRevisao() {
       ${aviso}
     </div>
     <div style="overflow-x:auto"><table class="rev">
-      <thead><tr><th style="width:80px">Apto</th><th style="width:80px">Reserva</th><th>Titular</th><th>Acompanhante(s)</th><th style="width:60px">Ad.</th><th style="width:60px">Cr.</th><th style="width:120px">Café</th><th style="width:130px">Saída</th><th>Obs.</th><th></th></tr></thead>
+      <thead><tr><th style="width:80px">Apto</th><th style="width:80px">Reserva</th><th>Titular</th><th>Acompanhante(s)</th><th style="width:60px">Ad.</th><th style="width:60px">Cr.</th><th style="width:120px">Café</th><th>Obs.</th><th></th></tr></thead>
       <tbody>${imp.itens.map((i, n) => `<tr class="${i.cafe ? "" : "sem"}">
         <td><input data-i="${n}" data-f="apto" value="${esc(i.apto)}"><small>${i.exId ? "↻ já cadastrada" : "nova"}</small></td>
         <td><input data-i="${n}" data-f="reserva" value="${esc(i.reserva)}"></td>
@@ -542,8 +542,6 @@ function renderRevisao() {
         <td><input type="number" min="0" data-i="${n}" data-f="criancas" value="${num(i.criancas)}"></td>
         <td><select data-i="${n}" data-f="cafe"><option value="1"${i.cafe ? " selected" : ""}>COM café</option><option value="0"${i.cafe ? "" : " selected"}>SEM café</option></select>
           ${i.cafeMantido ? '<small>mantido (o PDF diz NÃO)</small>' : ""}</td>
-        <td><input type="date" data-i="${n}" data-f="saida" value="${i.saida}" min="${imp.data}">
-          <small>${i.saidaDefinida ? "confirmada" : "a confirmar"}</small></td>
         <td><input data-i="${n}" data-f="obs" value="${esc(i.obs)}"></td>
         <td><button class="btn danger small" data-rm="${n}" title="Tirar da importação">✕</button></td></tr>`).join("")}
       </tbody></table></div>
@@ -604,7 +602,7 @@ function renderReservas() {
       <td><span class="tag e${esc(r.emp)}">${r.emp === "9006" ? "9006" : "Madero"}</span></td>
       <td><b>${esc(r.apto)}</b></td><td>${esc(r.reserva)}</td><td>${esc(r.hospede)}</td><td>${esc(r.acompanhante)}</td>
       <td class="num">${num(r.adultos)}</td><td class="num">${num(r.criancas)}</td>
-      <td>${br(r.checkin)}</td><td>${br(r.checkout)}${saidaIncerta(r) ? '<br><small style="color:var(--muted)">a confirmar</small>' : ""}</td>
+      <td>${br(r.checkin)}</td><td>${br(r.checkout)}</td>
       <td>${r.cafe ? "✔" : '<span class="tag no">sem café</span>'}</td>
       <td><small>${esc(r.obs)}</small></td>
       <td style="white-space:nowrap"><button class="btn sec small" data-edit="${esc(r.id)}">Editar</button>
