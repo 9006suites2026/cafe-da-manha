@@ -3,3 +3,4 @@
 backup-cafe-*.json
 .env
 .env.*
+*.pdf

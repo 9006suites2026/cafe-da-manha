@@ -71,6 +71,16 @@ tr.foot td{font-weight:700;border-bottom:0}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20;max-width:90vw}
 .toast.show{opacity:1}
 .itens input[type=text]{width:100%}
+.drop{flex:1;min-width:260px;flex-direction:row;justify-content:center;align-items:center;gap:6px;border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;cursor:pointer;color:var(--muted);font-size:14px;background:var(--soft)}
+.drop:hover,.drop.over{border-color:var(--accent);color:var(--accent)}
+.alerta{background:#fff4e0;border:1px solid #f0c060;padding:8px 10px;border-radius:6px;font-size:13px;margin:10px 0}
+.okb{display:inline-block;background:#e6f4e1;border:1px solid #9ccc8a;color:#2f5f1f;padding:6px 10px;border-radius:6px;font-size:13px}
+.rev-head{margin:14px 0 8px;align-items:center}
+table.rev td{padding:4px}
+table.rev input,table.rev select{width:100%;padding:5px 6px;font-size:13px}
+table.rev input.falta{border-color:#f0c060;background:#fffaf0}
+table.rev tr.sem td{background:#f7f2ee}
+table.rev small{color:var(--muted);font-size:11px}
 .overlay{position:fixed;inset:0;background:rgba(42,38,34,.75);display:flex;align-items:center;justify-content:center;z-index:10}
 .overlay[hidden]{display:none}
 .overlay form{width:min(380px,92vw);display:flex;flex-direction:column;gap:12px;margin:0}
@@ -162,6 +172,18 @@ tr.foot td{font-weight:700;border-bottom:0}
 
 <!-- ============ RESERVAS ============ -->
 <section class="tab" id="tab-reservas">
+  <div class="card" id="cardPdf">
+    <h2>📄 Importar PDF do Controle de Pensão</h2>
+    <p class="hint" style="margin-top:0">Gere o relatório <b>Controle de Pensão</b> no sistema do hotel, salve em PDF e solte aqui (ou clique para escolher).
+      O PDF é lido aqui mesmo no navegador e não é enviado para nenhum lugar. Antes de salvar, você confere e corrige tudo.</p>
+    <div class="row">
+      <label>Empreendimento deste PDF<select id="pdfEmp"></select></label>
+      <label class="drop" id="pdfDrop">📄 Solte o PDF aqui ou <u>clique para escolher</u>
+        <input type="file" id="pdfFile" accept="application/pdf,.pdf" hidden></label>
+    </div>
+    <div id="pdfRevisao"></div>
+  </div>
+
   <div class="card">
     <h2 id="formTitulo">Nova reserva</h2>
     <form id="formRes" class="row" autocomplete="off">
@@ -352,6 +374,11 @@ const Store = {
     okOuErro(await sb.from("extras").upsert({ dia, emp, adultos: +v.a || 0, criancas: +v.c || 0 }, { onConflict: "dia,emp" }));
   }),
   salvarConfig: () => gravar(async () => okOuErro(await sb.from("config").upsert({ id: 1, itens: db.itens, margem: +db.margem || 0 }))),
+  // troca de uma vez todos os aptos de uma importação de PDF (mesmo empreendimento + mesmo dia)
+  substituirImportacao: (prefixo, lista) => gravar(async () => {
+    okOuErro(await sb.from("reservas").delete().like("id", prefixo + "%"));
+    await upsertEmLotes("reservas", lista.map(linhaReserva));
+  }),
   apagarAntigas: lim => gravar(async () => {
     okOuErro(await sb.from("reservas").delete().lt("checkout", lim));
     okOuErro(await sb.from("extras").delete().lt("dia", lim));
@@ -392,6 +419,8 @@ function agendarRecarga() {
 // Toma café na manhã do dia D quem dormiu a noite anterior: check-in < D <= check-out
 // A relação lista TODOS os hospedados da noite anterior; só os "com café" entram na contagem.
 const hospedado = (r, dia) => r.checkin < dia && dia <= r.checkout;
+// Aptos vindos do PDF valem só para o dia importado (o PDF não traz a data de saída)
+const doPdf = r => String(r.id).startsWith("pdf-");
 
 function resumo(dia) {
   const emp = {};
@@ -461,7 +490,7 @@ function renderRelacao() {
       let rows = o.aptos.map(r => `<tr${r.cafe ? "" : ' style="opacity:.75"'}><td><b>${esc(r.apto)}</b></td>
         <td>${esc(r.hospede)}${r.acompanhante ? `<br><small>+ ${esc(r.acompanhante)}</small>` : ""}${r.obs ? `<br><small style="color:var(--muted)">${esc(r.obs)}</small>` : ""}</td>
         <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
-        <td>${r.cafe ? "" : '<span class="tag no">sem café</span> '}${r.checkout === diaSel ? '<span class="tag out">sai hoje</span>' : "até " + brCurto(r.checkout)}</td></tr>`).join("");
+        <td>${r.cafe ? "" : '<span class="tag no">sem café</span> '}${doPdf(r) ? "" : r.checkout === diaSel ? '<span class="tag out">sai hoje</span>' : "até " + brCurto(r.checkout)}</td></tr>`).join("");
       if (!rows) rows = `<tr><td colspan="5" class="empty">Nenhum apartamento hospedado neste dia.</td></tr>`;
       else rows += `<tr class="foot"><td colspan="2">Com café: ${pl(o.aptosCafe, "apto")}${o.semCafe ? ` · sem café: ${o.semCafe}` : ""}</td><td class="num">${o.adultos}</td><td class="num">${o.criancas}</td><td></td></tr>`;
       l += `<div class="card"><h3><span class="tag e${k}">${EMP[k]}</span></h3>
@@ -532,7 +561,7 @@ function renderRelatorio() {
       for (const r of o.aptos) {
         const pessoasApto = (+r.adultos || 0) + (+r.criancas || 0);
         const acomp = r.acompanhante ? esc(r.acompanhante) : (pessoasApto >= 2 ? '<span class="falta">não informado</span>' : "—");
-        const obs = [r.checkout === dia ? "Check-out hoje" : "", esc(r.obs)].filter(Boolean).join(" · ");
+        const obs = [r.checkout === dia && !doPdf(r) ? "Check-out hoje" : "", esc(r.obs)].filter(Boolean).join(" · ");
         h += `<tr class="${r.cafe ? "" : "sem"}"><td><b>${esc(r.apto)}</b></td><td>${esc(r.hospede) || "—"}</td><td>${acomp}</td>
           <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
           <td class="num ${r.cafe ? "cafe-sim" : "cafe-nao"}">${r.cafe ? "COM CAFÉ" : "SEM CAFÉ"}</td>
@@ -562,6 +591,192 @@ function renderRelatorio() {
 function imprimirRelacao() { renderRelatorio(); window.print(); }
 window.addEventListener("beforeprint", renderRelatorio); // também funciona com Ctrl+P
 
+// =====================================================================
+//  IMPORTAÇÃO DO PDF "CONTROLE DE PENSÃO" (lido no navegador com pdf.js)
+// =====================================================================
+const PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/";
+let pdfjsPromise = null;
+function carregarPdfJs() {
+  if (!pdfjsPromise) pdfjsPromise = import(PDFJS + "pdf.min.mjs").then(m => { m.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.mjs"; return m; });
+  return pdfjsPromise;
+}
+const semAcento = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim();
+
+// Junta os pedaços de texto de uma célula, pondo espaço quando há distância entre eles
+function juntar(itens) {
+  let s = "", fim = null;
+  for (const it of itens) {
+    if (fim !== null && it.x - fim > 1 && !s.endsWith(" ") && !it.s.startsWith(" ")) s += " ";
+    s += it.s; fim = it.x + it.w;
+  }
+  return s.replace(/\s+/g, " ").trim();
+}
+// Lê o PDF e devolve as linhas (itens de texto agrupados pela altura)
+async function linhasDoPdf(file) {
+  const pdfjs = await carregarPdfJs();
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const linhas = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const tc = await (await doc.getPage(p)).getTextContent();
+    const itens = tc.items.filter(it => it.str && it.str.trim())
+      .map(it => ({ x: it.transform[4], y: it.transform[5], w: it.width, s: it.str }))
+      .sort((a, b) => b.y - a.y || a.x - b.x);
+    const pls = [];
+    for (const it of itens) {
+      let l = pls.find(l => Math.abs(l.y - it.y) <= 3);
+      if (!l) { l = { y: it.y, itens: [] }; pls.push(l); }
+      l.itens.push(it);
+    }
+    pls.sort((a, b) => b.y - a.y).forEach(l => { l.itens.sort((a, b) => a.x - b.x); linhas.push(l); });
+  }
+  return linhas;
+}
+const COLS = { HOSPEDE: "hospede", FAIXA: "faixa", PENSAO: "pensao", UH: "uh", RESERVA: "reserva", CAFE: "cafe", ALMOCO: "almoco", JANTAR: "jantar" };
+function celulas(l, cols) {
+  const ord = Object.entries(cols).sort((a, b) => a[1] - b[1]);
+  const g = {};
+  for (const it of l.itens) {
+    let col = null;
+    for (const [nome, x] of ord) if (x <= it.x + 10) col = nome;
+    if (col) (g[col] ||= []).push(it);
+  }
+  const out = {};
+  for (const k in g) out[k] = juntar(g[k]);
+  return out;
+}
+function interpretarPdf(linhas) {
+  let cols = null, dataTitulo = null, diaria = null, totalPdf = null, proximaTemTotal = false;
+  const pessoas = [];
+  for (const l of linhas) {
+    const t = juntar(l.itens), T = semAcento(t);
+    let m;
+    // quadro do topo: "CAFÉ DA MANHÃ  ALMOÇO  JANTAR" e, na linha de baixo, "26  00  00"
+    if (proximaTemTotal) { proximaTemTotal = false; if (totalPdf === null && (m = t.match(/(\d+)/))) { totalPdf = +m[1]; continue; } } // (a linha começa com o ícone da xícara)
+    if (!cols && T.startsWith("CAFE DA MANHA") && T.includes("ALMOCO")) { proximaTemTotal = true; continue; }
+    if (!dataTitulo && (m = T.match(/CONTROLE DE PENSAO\s*-\s*(\d{2}\/\d{2}\/\d{4})/))) { dataTitulo = parseData(m[1]); continue; }
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(t)) { diaria = parseData(t); continue; }
+    if (T.includes("HOSPEDE") && T.includes("RESERVA") && T.includes("CAFE")) {
+      cols = {};
+      for (const it of l.itens) { const k = COLS[semAcento(it.s).split(" ")[0]]; if (k && cols[k] === undefined) cols[k] = it.x; }
+      continue;
+    }
+    if (!cols) continue;
+    const c = celulas(l, cols);
+    if (T.startsWith("REFEICOES DO DIA")) { if (totalPdf === null && /^\d+$/.test(c.cafe || "")) totalPdf = +c.cafe; continue; }
+    const cafe = semAcento(c.cafe);
+    if (!c.hospede || !/^\d+$/.test(c.reserva || "") || !/^(SIM|NAO)$/.test(cafe)) continue;
+    const uh = (c.uh || "").match(/^(\S+)\s*-\s*(.*)$/);
+    pessoas.push({ nome: c.hospede, faixa: c.faixa || "", apto: uh ? uh[1] : (c.uh || ""), tipo: uh ? uh[2] : "", reserva: c.reserva, cafe: cafe === "SIM" });
+  }
+  return { pessoas, dataTitulo, diaria, totalPdf };
+}
+// Agrupa os hóspedes por apto + reserva: o primeiro com nome é o titular, os demais são acompanhantes
+function agruparPorApto(pessoas) {
+  const ehGenerico = n => /^ACOMPANHANTE\b/.test(semAcento(n));
+  const ehCrianca = p => !/^ADULT/.test(semAcento(p.faixa || "ADULTO"));
+  const grupos = new Map();
+  for (const p of pessoas) {
+    const k = p.apto + "|" + p.reserva;
+    if (!grupos.has(k)) grupos.set(k, { apto: p.apto, tipo: p.tipo, reserva: p.reserva, pessoas: [] });
+    grupos.get(k).pessoas.push(p);
+  }
+  return [...grupos.values()].map(g => {
+    const comCafe = g.pessoas.filter(p => p.cafe), semCafe = g.pessoas.filter(p => !p.cafe);
+    const cafe = comCafe.length > 0;
+    const conta = cafe ? comCafe : g.pessoas;            // apto misto: só conta quem tem café
+    const titular = g.pessoas.find(p => !ehGenerico(p.nome)) || g.pessoas[0];
+    const outros = g.pessoas.filter(p => p !== titular);
+    const obs = [`Res. ${g.reserva}`,
+      cafe && semCafe.length ? `Sem café: ${semCafe.map(p => ehGenerico(p.nome) ? "acompanhante" : p.nome).join(", ")}` : ""].filter(Boolean).join(" · ");
+    return {
+      apto: g.apto, tipo: g.tipo, reserva: g.reserva,
+      hospede: ehGenerico(titular.nome) ? "" : titular.nome,
+      acompanhante: outros.filter(p => !ehGenerico(p.nome)).map(p => p.nome).join(", "),
+      semNome: outros.filter(p => ehGenerico(p.nome)).length,
+      adultos: conta.filter(p => !ehCrianca(p)).length, criancas: conta.filter(ehCrianca).length, cafe, obs
+    };
+  }).sort((a, b) => String(a.apto).localeCompare(String(b.apto), "pt-BR", { numeric: true }));
+}
+
+let imp = null; // importação em conferência
+async function processarPdf(file) {
+  if (!file) return;
+  if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") { toast("Escolha um arquivo PDF."); return; }
+  imp = null; $("pdfRevisao").innerHTML = '<p class="hint">Lendo o PDF…</p>';
+  try {
+    const r = interpretarPdf(await linhasDoPdf(file));
+    if (!r.pessoas.length) {
+      $("pdfRevisao").innerHTML = '<div class="alerta">Não encontrei hóspedes neste PDF. Ele precisa ser o relatório <b>Controle de Pensão</b>, com as colunas Hóspede, UH, Reserva e Café.</div>';
+      return;
+    }
+    imp = {
+      arquivo: file.name, data: r.dataTitulo || (r.diaria ? addDays(r.diaria, 1) : addDays(hoje(), 1)),
+      totalPdf: r.totalPdf, simLidos: r.pessoas.filter(p => p.cafe).length, hospedesLidos: r.pessoas.length,
+      itens: agruparPorApto(r.pessoas)
+    };
+    renderRevisao();
+  } catch (e) {
+    console.error(e);
+    $("pdfRevisao").innerHTML = `<div class="alerta">Não consegui ler o PDF: ${esc(e.message || e)}. Verifique a internet e tente de novo.</div>`;
+  }
+}
+function renderRevisao() {
+  const el = $("pdfRevisao");
+  if (!imp) { el.innerHTML = ""; return; }
+  const pessoasCafe = imp.itens.filter(i => i.cafe).reduce((s, i) => s + (+i.adultos || 0) + (+i.criancas || 0), 0);
+  const semNomeTotal = imp.itens.reduce((s, i) => s + (i.semNome && !i.acompanhante ? i.semNome : 0), 0);
+  let aviso = "";
+  if (imp.totalPdf !== null) aviso = imp.totalPdf === imp.simLidos
+    ? `<span class="okb">✓ O PDF diz ${imp.totalPdf} cafés e foram lidos ${imp.simLidos}.</span>`
+    : `<div class="alerta">Atenção: o PDF diz <b>${imp.totalPdf}</b> cafés, mas foram lidos <b>${imp.simLidos}</b>. Confira a lista antes de salvar.</div>`;
+  el.innerHTML = `
+    <div class="row rev-head">
+      <label>Data do café<input type="date" id="impData" value="${imp.data}"></label>
+      <div class="hint" style="margin:0;flex:1"><b>${esc(imp.arquivo)}</b><br>${imp.hospedesLidos} hóspedes lidos → ${pl(imp.itens.length, "apto")} ·
+        <b>${pl(pessoasCafe, "pessoa")} com café</b>${semNomeTotal ? ` · ${semNomeTotal} acompanhante(s) sem nome no PDF (campos em amarelo)` : ""}</div>
+      ${aviso}
+    </div>
+    <div style="overflow-x:auto"><table class="rev">
+      <thead><tr><th style="width:80px">Apto</th><th>Titular</th><th>Acompanhante(s)</th><th style="width:60px">Ad.</th><th style="width:60px">Cr.</th><th style="width:110px">Café</th><th>Obs.</th><th></th></tr></thead>
+      <tbody>${imp.itens.map((i, n) => `<tr class="${i.cafe ? "" : "sem"}">
+        <td><input data-i="${n}" data-f="apto" value="${esc(i.apto)}"><small>${esc(i.tipo)}</small></td>
+        <td><input data-i="${n}" data-f="hospede" value="${esc(i.hospede)}"></td>
+        <td><input data-i="${n}" data-f="acompanhante" value="${esc(i.acompanhante)}" class="${i.semNome && !i.acompanhante ? "falta" : ""}"
+             placeholder="${i.semNome ? `${i.semNome} acompanhante(s) sem nome no PDF` : ""}"></td>
+        <td><input type="number" min="0" data-i="${n}" data-f="adultos" value="${i.adultos}"></td>
+        <td><input type="number" min="0" data-i="${n}" data-f="criancas" value="${i.criancas}"></td>
+        <td><select data-i="${n}" data-f="cafe"><option value="1"${i.cafe ? " selected" : ""}>COM café</option><option value="0"${i.cafe ? "" : " selected"}>SEM café</option></select></td>
+        <td><input data-i="${n}" data-f="obs" value="${esc(i.obs)}"></td>
+        <td><button class="btn danger small" data-rm="${n}" title="Tirar da importação">✕</button></td></tr>`).join("")}
+      </tbody></table></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="btnImpSalvar">Salvar ${pl(imp.itens.length, "apto")} no sistema</button>
+      <button class="btn sec" id="btnImpCancelar">Cancelar</button>
+    </div>`;
+}
+async function salvarImportacao() {
+  const emp = $("pdfEmp").value, data = $("impData").value;
+  if (!data) { toast("Informe a data do café."); return; }
+  const prefixo = `pdf-${emp}-${data}-`;
+  const ja = db.reservas.filter(r => String(r.id).startsWith(prefixo)).length;
+  if (ja && !confirm(`Já existe uma importação de PDF do ${EMP[emp]} para ${br(data)} (${pl(ja, "apto")}).\n\nSubstituir pela nova? As alterações feitas na anterior serão perdidas.`)) return;
+  const ci = addDays(data, -1);
+  const lista = imp.itens.filter(i => String(i.apto).trim()).map((i, n) => ({
+    id: `${prefixo}${String(i.apto).trim()}-${i.reserva || "x"}-${n}`, emp, apto: String(i.apto).trim(),
+    hospede: String(i.hospede).trim(), acompanhante: String(i.acompanhante).trim(),
+    adultos: Math.max(0, parseInt(i.adultos) || 0), criancas: Math.max(0, parseInt(i.criancas) || 0),
+    checkin: ci, checkout: data, cafe: !!i.cafe, obs: String(i.obs).trim()
+  }));
+  db.reservas = db.reservas.filter(r => !String(r.id).startsWith(prefixo)).concat(lista);
+  localStorage.setItem("cafe-pdf-emp", emp);
+  imp = null; renderRevisao();
+  diaSel = data; renderTudo();
+  if (await Store.substituirImportacao(prefixo, lista)) {
+    toast(`${pl(lista.length, "apto")} importado(s) para o café de ${br(data)}.`, 3500);
+    document.querySelector('nav button[data-tab="relacao"]').click();
+  }
+}
+
 // ---------- render: reservas ----------
 function renderReservas() {
   const q = $("busca").value.trim().toLowerCase(), fe = $("filtroEmp").value, per = $("filtroPer").value, h = hoje();
@@ -573,7 +788,7 @@ function renderReservas() {
       <td><span class="tag e${r.emp}">${r.emp === "9006" ? "9006" : "Madero"}</span></td>
       <td><b>${esc(r.apto)}</b></td><td>${esc(r.hospede)}</td><td>${esc(r.acompanhante)}</td>
       <td class="num">${r.adultos}</td><td class="num">${r.criancas}</td>
-      <td>${br(r.checkin)}</td><td>${br(r.checkout)}</td>
+      <td>${doPdf(r) ? '<small>PDF</small>' : br(r.checkin)}</td><td>${doPdf(r) ? `café de ${br(r.checkout)}` : br(r.checkout)}</td>
       <td>${r.cafe ? "✔" : '<span class="tag no">sem café</span>'}</td>
       <td><small>${esc(r.obs)}</small></td>
       <td style="white-space:nowrap"><button class="btn sec small" data-edit="${esc(r.id)}">Editar</button>
@@ -631,6 +846,31 @@ $("btnCopiar").onclick = async () => {
   catch (e) { const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
   toast("Copiado! É só colar no WhatsApp.");
 };
+
+// importação de PDF
+for (const k in EMP) $("pdfEmp").add(new Option(EMP[k], k));
+if (EMP[localStorage.getItem("cafe-pdf-emp")]) $("pdfEmp").value = localStorage.getItem("cafe-pdf-emp");
+$("pdfFile").onchange = e => { processarPdf(e.target.files[0]); e.target.value = ""; };
+["dragenter", "dragover"].forEach(ev => $("pdfDrop").addEventListener(ev, e => { e.preventDefault(); $("pdfDrop").classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => $("pdfDrop").addEventListener(ev, e => { e.preventDefault(); $("pdfDrop").classList.remove("over"); }));
+$("pdfDrop").addEventListener("drop", e => processarPdf(e.dataTransfer.files[0]));
+$("pdfRevisao").addEventListener("input", e => {
+  const el = e.target; if (!imp || el.dataset.i === undefined) return;
+  const it = imp.itens[+el.dataset.i], f = el.dataset.f;
+  it[f] = f === "cafe" ? el.value === "1" : el.value;
+  if (f === "acompanhante") el.classList.toggle("falta", !!(it.semNome && !el.value.trim()));
+});
+$("pdfRevisao").addEventListener("change", e => {
+  const el = e.target;
+  if (el.id === "impData") { imp.data = el.value; return; }
+  if (el.dataset.f === "cafe" || el.dataset.f === "adultos" || el.dataset.f === "criancas") renderRevisao(); // atualiza totais
+});
+$("pdfRevisao").addEventListener("click", e => {
+  if (!imp) return;
+  if (e.target.dataset.rm !== undefined) { imp.itens.splice(+e.target.dataset.rm, 1); renderRevisao(); }
+  if (e.target.id === "btnImpSalvar") salvarImportacao();
+  if (e.target.id === "btnImpCancelar") { imp = null; renderRevisao(); }
+});
 
 // formulário de reserva
 for (const k in EMP) { $("fEmp").add(new Option(EMP[k], k)); $("filtroEmp").add(new Option(EMP[k], k)); }
