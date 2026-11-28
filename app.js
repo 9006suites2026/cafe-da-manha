@@ -371,13 +371,134 @@ function juntar(itens) {
   }
   return s.replace(/\s+/g, " ").trim();
 }
-// Lê o PDF e devolve as linhas (itens de texto agrupados pela altura)
-async function linhasDoPdf(file) {
+// Abre o PDF com segurança
+async function abrirPdf(file) {
   const pdfjs = await carregarPdfJs();
   if (file.size > 20 * 1024 * 1024) throw new Error("arquivo muito grande (máximo 20 MB)");
   // isEvalSupported:false = pdf.js não executa código gerado a partir do PDF (proteção contra PDF malicioso)
   const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, enableXfa: false }).promise;
   if (doc.numPages > 50) throw new Error("PDF com páginas demais (máximo 50)");
+  return { pdfjs, doc };
+}
+// Lê o texto letra por letra (com a posição de cada uma). Usado na "Listagem para Café/Pensão",
+// cuja fonte tem espaçamento irregular entre letras: assim os espaços vêm só dos espaços de verdade.
+async function itensPorGlifos(page, pdfjs) {
+  const OPS = pdfjs.OPS, ops = await page.getOperatorList();
+  const mul = (m, n) => [m[0]*n[0]+m[2]*n[1], m[1]*n[0]+m[3]*n[1], m[0]*n[2]+m[2]*n[3], m[1]*n[2]+m[3]*n[3], m[0]*n[4]+m[2]*n[5]+m[4], m[1]*n[4]+m[3]*n[5]+m[5]];
+  let ctm = [1,0,0,1,0,0], tm = [1,0,0,1,0,0], tlm = [1,0,0,1,0,0], tam = 12, cs = 0, ws = 0, hs = 1;
+  const pilha = [], glifos = [];
+  for (let k = 0; k < ops.fnArray.length; k++) {
+    const fn = ops.fnArray[k], a = ops.argsArray[k];
+    if (fn === OPS.save) pilha.push(ctm.slice());
+    else if (fn === OPS.restore) ctm = pilha.pop() || [1,0,0,1,0,0];
+    else if (fn === OPS.transform) ctm = mul(ctm, a);
+    else if (fn === OPS.beginText) { tm = [1,0,0,1,0,0]; tlm = tm.slice(); }
+    else if (fn === OPS.setFont) tam = a[1];
+    else if (fn === OPS.setCharSpacing) cs = a[0];
+    else if (fn === OPS.setWordSpacing) ws = a[0];
+    else if (fn === OPS.setHScale) hs = a[0] / 100;
+    else if (fn === OPS.setTextMatrix) { tm = a.slice(0, 6); tlm = tm.slice(); }
+    else if (fn === OPS.moveText) { tlm = mul(tlm, [1,0,0,1,a[0],a[1]]); tm = tlm.slice(); }
+    else if (fn === OPS.showText || fn === OPS.showSpacedText) {
+      for (const g of a[0]) {
+        if (typeof g === "number") { tm = mul(tm, [1,0,0,1,-g/1000*tam*hs,0]); continue; }
+        const m = mul(ctm, tm), adv = ((g.width || 0) * tam / 1000 + cs + (g.unicode === " " ? ws : 0)) * hs;
+        glifos.push({ x: m[4], y: m[5], w: adv * Math.hypot(m[0], m[1]), s: g.unicode || "", fs: tam * Math.hypot(m[2], m[3]) });
+        tm = mul(tm, [1,0,0,1,adv,0]);
+      }
+    }
+  }
+  // junta as letras em pedaços de texto (células): quebra quando muda a linha ou há um salto grande
+  const itens = []; let cur = null;
+  for (const g of glifos) {
+    const fs = g.fs || 8;
+    if (cur && Math.abs(g.y - cur.y) < fs * 0.3 && g.x >= cur.fim - fs * 0.3 && g.x - cur.fim < fs * 1.0) {
+      if (g.x - cur.fim > fs * 0.32 && !cur.s.endsWith(" ") && g.s !== " ") cur.s += " ";
+      cur.s += g.s; cur.fim = g.x + g.w;
+    } else { if (cur) itens.push(cur); cur = { x: g.x, y: g.y, s: g.s, fim: g.x + g.w }; }
+  }
+  if (cur) itens.push(cur);
+  return itens.map(i => ({ x: i.x, y: i.y, w: i.fim - i.x, s: i.s.replace(/\s+/g, " ").trim() })).filter(i => i.s);
+}
+// "LISTAGEM PARA CAFÉ/PENSÃO": uma linha por hóspede; o número do apto aparece uma vez por quarto
+// (célula mesclada), e "QTDE PAX" diz quantas linhas pertencem àquele apto
+async function interpretarListagem(doc, pdfjs) {
+  let emp = null, dataTitulo = null, totalPdf = null;
+  const linhas = [], uhs = [];
+  const D = /^\d{2}\/\d{2}\/\d{4}$/;
+  for (let p = 1; p <= doc.numPages; p++) {
+    const itens = await itensPorGlifos(await doc.getPage(p), pdfjs);
+    for (const it of itens) {
+      const T = semAcento(it.s); let m;
+      if (!emp && /^9006\b/.test(T)) emp = "9006";
+      if (!emp && T.includes("MADERO")) emp = "madero";
+      if (!dataTitulo && (m = T.match(/FILTRADO DE (\d{2}\/\d{2}\/\d{4})/))) dataTitulo = parseData(m[1]);
+      if (totalPdf === null && T.includes("TOTAL DO DIA")) {
+        const n = itens.filter(i => /^\d+$/.test(i.s) && i.y < it.y && it.y - i.y < 30 && Math.abs(i.x - it.x) < 90).sort((a, b) => b.y - a.y)[0];
+        if (n) totalPdf = +n.s;
+      }
+    }
+    const ancoras = itens.filter(i => /^(TITULAR|ACOMPANHANTE)$/.test(semAcento(i.s)));
+    if (!ancoras.length) continue;
+    const xTipoFim = Math.max(...ancoras.map(a => a.x + a.w));
+    const datas = itens.filter(i => D.test(i.s) && i.x > xTipoFim);
+    const xData = datas.length ? Math.min(...datas.map(d => d.x)) : Infinity;
+    const codigos = [];
+    for (const a of ancoras) {
+      const naLinha = itens.filter(i => Math.abs(i.y - a.y) < 3);
+      const cod = naLinha.filter(i => i.x < a.x && /^\d+$/.test(i.s)).sort((x, y) => y.x - x.x)[0];
+      if (cod) codigos.push(cod.x);
+      const dts = naLinha.filter(i => D.test(i.s)).sort((x, y) => x.x - y.x);
+      linhas.push({
+        p, y: a.y, titular: semAcento(a.s) === "TITULAR", reserva: cod ? cod.s : "", nomes: [],
+        faixa: (naLinha.find(i => i.x > xData && /^(ADULT|CRIAN|BEBE|INFANT|CHD)/.test(semAcento(i.s))) || {}).s || "ADULTO",
+        cafe: semAcento((naLinha.find(i => i.x > xData && /^(SIM|NAO)$/.test(semAcento(i.s))) || { s: "SIM" }).s) === "SIM",
+        ini: dts[0] ? parseData(dts[0].s) : null, fim: dts[1] ? parseData(dts[1].s) : null
+      });
+    }
+    // nome: tudo entre a coluna "tipo hóspede" e a de datas; nomes longos quebram em 2 linhas,
+    // então cada pedaço vai para a linha de hóspede mais próxima na altura
+    const linhasPag = linhas.filter(l => l.p === p);
+    for (const it of itens) {
+      if (it.x <= xTipoFim - 1 || it.x >= xData - 2 || ancoras.includes(it)) continue;
+      const alvo = linhasPag.map(l => [l, Math.abs(l.y - it.y)]).sort((a, b) => a[1] - b[1])[0];
+      if (alvo && alvo[1] < 14) alvo[0].nomes.push(it);
+    }
+    // número do apto (coluna mais à esquerda) e QTDE PAX (número ao lado)
+    const xCod = codigos.length ? Math.min(...codigos) : 0;
+    const esquerda = itens.filter(i => /^\d+$/.test(i.s) && i.x < xCod - 5);
+    if (esquerda.length) {
+      const xUH = Math.min(...esquerda.map(i => i.x));
+      for (const u of esquerda.filter(i => i.x < xUH + 15)) {
+        const pax = esquerda.find(i => i.x >= xUH + 15 && Math.abs(i.y - u.y) < 3);
+        uhs.push({ p, y: u.y, uh: u.s, pax: pax ? +pax.s : 0 });
+      }
+    }
+  }
+  // liga cada hóspede ao seu apto: em ordem, cada apto "consome" QTDE PAX linhas
+  const ordem = (a, b) => a.p - b.p || b.y - a.y;
+  linhas.sort(ordem); uhs.sort(ordem);
+  let idx = 0, sequencialOk = uhs.length > 0;
+  for (const u of uhs) {
+    const grupo = linhas.slice(idx, idx + Math.max(1, u.pax));
+    const mesmaPag = grupo.filter(l => l.p === u.p);
+    if (!grupo.length || (mesmaPag.length && (u.y > Math.max(...mesmaPag.map(l => l.y)) + 9 || u.y < Math.min(...mesmaPag.map(l => l.y)) - 9))) { sequencialOk = false; break; }
+    grupo.forEach(l => l.apto = u.uh);
+    idx += grupo.length;
+  }
+  if (!sequencialOk || idx !== linhas.length)   // plano B: apto mais próximo na mesma página
+    for (const l of linhas) {
+      const u = uhs.filter(u => u.p === l.p).sort((a, b) => Math.abs(a.y - l.y) - Math.abs(b.y - l.y))[0];
+      l.apto = u ? u.uh : (l.apto || "?");
+    }
+  const pessoas = linhas.map(l => ({
+    nome: l.nomes.sort((a, b) => b.y - a.y || a.x - b.x).map(i => i.s).join(" ").replace(/\s+/g, " ").trim().toLocaleUpperCase("pt-BR"),
+    faixa: l.faixa, apto: l.apto, tipo: "", reserva: l.reserva, cafe: l.cafe, titular: l.titular
+  }));
+  return { pessoas, dataTitulo, diaria: null, totalPdf, emp };
+}
+// "CONTROLE DE PENSÃO" (relatório antigo): devolve as linhas (itens de texto agrupados pela altura)
+async function linhasDoDoc(doc) {
   const linhas = [];
   for (let p = 1; p <= doc.numPages; p++) {
     const tc = await (await doc.getPage(p)).getTextContent();
@@ -447,14 +568,21 @@ function agruparPorApto(pessoas) {
     const comCafe = g.pessoas.filter(p => p.cafe), semCafe = g.pessoas.filter(p => !p.cafe);
     const cafe = comCafe.length > 0;
     const conta = cafe ? comCafe : g.pessoas;            // apto misto: só conta quem tem café
-    const titular = g.pessoas.find(p => !ehGenerico(p.nome)) || g.pessoas[0];
+    // titular: quem o PDF marca como "Titular" (se houver); senão, o primeiro com nome
+    const titular = g.pessoas.find(p => p.titular && !ehGenerico(p.nome)) || g.pessoas.find(p => !ehGenerico(p.nome)) || g.pessoas[0];
     const outros = g.pessoas.filter(p => p !== titular);
+    // nome repetido (ex.: o titular aparece 2x) conta como pessoa sem nome
+    const vistos = new Set([semAcento(titular.nome)]), nomesAcomp = []; let semNome = 0;
+    for (const p of outros) {
+      const k = semAcento(p.nome);
+      if (!p.nome || ehGenerico(p.nome) || vistos.has(k)) semNome++; else { vistos.add(k); nomesAcomp.push(p.nome); }
+    }
     const obs = cafe && semCafe.length ? `Sem café: ${semCafe.map(p => ehGenerico(p.nome) ? "acompanhante" : p.nome).join(", ")}` : "";
     return {
       apto: g.apto, tipo: g.tipo, reserva: g.reserva,
       hospede: ehGenerico(titular.nome) ? "" : titular.nome,
-      acompanhante: outros.filter(p => !ehGenerico(p.nome)).map(p => p.nome).join(", "),
-      semNome: outros.filter(p => ehGenerico(p.nome)).length,
+      acompanhante: juntarAcomp(nomesAcomp),
+      semNome,
       adultos: conta.filter(p => !ehCrianca(p)).length, criancas: conta.filter(ehCrianca).length, cafe, obs
     };
   }).sort((a, b) => String(a.apto).localeCompare(String(b.apto), "pt-BR", { numeric: true }));
@@ -466,13 +594,19 @@ async function processarPdf(file) {
   if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") { toast("Escolha um arquivo PDF."); return; }
   imp = null; $("pdfRevisao").innerHTML = '<p class="hint">Lendo o PDF…</p>';
   try {
-    const r = interpretarPdf(await linhasDoPdf(file));
+    const { pdfjs, doc } = await abrirPdf(file);
+    // descobre o formato pela 1ª página: "Listagem para Café/Pensão" (novo) ou "Controle de Pensão" (antigo)
+    const tc1 = await (await doc.getPage(1)).getTextContent();
+    const ehListagem = semAcento(tc1.items.map(i => i.str).join("")).replace(/\s/g, "").includes("LISTAGEMPARACAFE");
+    const r = ehListagem ? await interpretarListagem(doc, pdfjs) : interpretarPdf(await linhasDoDoc(doc));
     if (!r.pessoas.length) {
-      $("pdfRevisao").innerHTML = '<div class="alerta">Não encontrei hóspedes neste PDF. Ele precisa ser o relatório <b>Controle de Pensão</b>, com as colunas Hóspede, UH, Reserva e Café.</div>';
+      $("pdfRevisao").innerHTML = '<div class="alerta">Não encontrei hóspedes neste PDF. Use a <b>Listagem para Café/Pensão</b> (ou o Controle de Pensão) do sistema do hotel.</div>';
       return;
     }
+    if (r.emp && EMP[r.emp]) $("pdfEmp").value = r.emp;   // o PDF diz de qual empreendimento é
     imp = {
-      arquivo: file.name, data: r.dataTitulo || (r.diaria ? addDays(r.diaria, 1) : addDays(hoje(), 1)),
+      arquivo: file.name, formato: ehListagem ? "Listagem para Café/Pensão" : "Controle de Pensão", empDetectado: r.emp || null,
+      data: r.dataTitulo || (r.diaria ? addDays(r.diaria, 1) : addDays(hoje(), 1)),
       totalPdf: r.totalPdf, simLidos: r.pessoas.filter(p => p.cafe).length, hospedesLidos: r.pessoas.length,
       itens: agruparPorApto(r.pessoas).map(i => ({ ...i, pdf: { ...i } })) // guarda o que veio do PDF
     };
@@ -539,7 +673,7 @@ function renderRevisao() {
   el.innerHTML = `
     <div class="row rev-head">
       <label>Data do café<input type="date" id="impData" value="${imp.data}"></label>
-      <div class="hint" style="margin:0;flex:1"><b>${esc(imp.arquivo)}</b><br>${imp.hospedesLidos} hóspedes lidos → ${pl(imp.itens.length, "apto")} ·
+      <div class="hint" style="margin:0;flex:1"><b>${esc(imp.arquivo)}</b> · ${esc(imp.formato || "")}${imp.empDetectado ? ` · <b>${esc(EMP[imp.empDetectado] || "")}</b> (detectado no PDF)` : ""}<br>${imp.hospedesLidos} hóspedes lidos → ${pl(imp.itens.length, "apto")} ·
         <b>${pl(pessoasCafe, "pessoa")} com café</b>${semNomeTotal ? ` · <b>${semNomeTotal} acompanhante(s) sem nome</b> (campos em amarelo)` : ""}
         <br>${imp.itens.length - existentes} nova(s) ·<b>${existentes} já cadastrada(s)</b> (mantém acompanhantes, observações e café)${mantidos ? ` · <b>${mantidos} com café mantido</b>` : ""}</div>
       ${aviso}
@@ -549,7 +683,7 @@ function renderRevisao() {
       <button class="btn-conf" id="btnImpConfTodos" type="button">✓ Marcar todos como conferidos</button>
     </div>
     <div style="overflow-x:auto"><table class="rev">
-      <thead><tr><th style="width:96px">Conferida</th><th style="width:80px">Apto</th><th style="width:80px">Reserva</th><th>Titular</th><th>Acompanhante(s)</th><th style="width:60px">Ad.</th><th style="width:60px">Cr.</th><th style="width:120px">Café</th><th>Obs.</th><th></th></tr></thead>
+      <thead><tr><th style="width:104px">Conferida</th><th style="width:72px">Apto</th><th style="width:76px">Reserva</th><th style="min-width:230px">Titular</th><th style="min-width:230px">Acompanhante(s)</th><th style="width:60px">Ad.</th><th style="width:60px">Cr.</th><th style="width:120px">Café</th><th>Obs.</th><th></th></tr></thead>
       <tbody>${imp.itens.map((i, n) => `<tr class="${i.conferida ? "conf" : i.cafe ? "" : "sem"}">
         <td><label class="conf-chk"><input type="checkbox" data-i="${n}" data-f="conferida"${i.conferida ? " checked" : ""}> ${i.conferida ? "Conferida" : "Conferir"}</label>
           ${i.mudou ? '<span class="tag mudou" title="Estava conferida, mas o PDF trouxe outra quantidade de pessoas ou café">mudou</span>' : ""}</td>

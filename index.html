@@ -95,6 +95,7 @@ tr.foot td{font-weight:700;border-bottom:0}
 .okb{display:inline-block;background:#e6f4e1;border:1px solid #9ccc8a;color:#2f5f1f;padding:6px 10px;border-radius:6px;font-size:13px}
 .rev-head{margin:14px 0 8px;align-items:center}
 table.rev td{padding:4px}
+table.rev{min-width:1100px}
 table.rev input,table.rev select{width:100%;padding:5px 6px;font-size:13px}
 table.rev input.falta,.acomp-box input.falta{border-color:#f0c060;background:#fffaf0}
 table.rev input[data-f="acomp"]{margin-bottom:3px}
@@ -207,8 +208,9 @@ table.rev small{color:var(--muted);font-size:11px}
 <!-- ============ RESERVAS ============ -->
 <section class="tab" id="tab-reservas">
   <div class="card" id="cardPdf">
-    <h2>📄 Importar PDF do Controle de Pensão</h2>
-    <p class="hint" style="margin-top:0">Gere o relatório <b>Controle de Pensão</b> no sistema do hotel, salve em PDF e solte aqui (ou clique para escolher).
+    <h2>📄 Importar PDF da Listagem para Café/Pensão</h2>
+    <p class="hint" style="margin-top:0">No sistema do hotel, gere a <b>Listagem para Café/Pensão</b> filtrada pelo dia do café, salve em PDF e solte aqui (ou clique para escolher).
+      O empreendimento e a data são lidos do próprio PDF. (O antigo "Controle de Pensão" também continua sendo aceito.)
       O PDF é lido aqui mesmo no navegador e não é enviado para nenhum lugar. Antes de salvar, você confere e corrige tudo.</p>
     <div class="row">
       <label>Empreendimento deste PDF<select id="pdfEmp"></select></label>
